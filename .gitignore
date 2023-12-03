@@ -2,6 +2,7 @@
 *.json
 *.feather
 *_processed.txt
+*.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
