@@ -4,6 +4,7 @@
 Set up experiments to run in experiments.yaml in the data directory. 
 
 Each entry of the form:
+```
 - data_params:
     num_samples: 1000
     sample_length: 500
@@ -16,6 +17,7 @@ Each entry of the form:
     hidden_dim: 128
     learning_rate: 0.001
   metrics: {}
+```
 
   The experiments will be run in turn, filling in metrics for later analysis.
 
