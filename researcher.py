@@ -2,7 +2,31 @@ import json
 import yaml
 from train_lstm import train_model, get_data
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
+def plot_confusion_matrices(file_path, experiment_ids):
+    with open(file_path, 'r') as file:
+        experiments = yaml.safe_load(file) or []
+
+    for exp in experiments:
+        if exp['experiment_id'] in experiment_ids:
+            print(f"Experiment ID: {exp['experiment_id']}")
+            metrics = exp.get('metrics', {})
+            conf_matrices = metrics.get('conf_matrix', [])
+            
+            for epoch, cm in enumerate(conf_matrices, start=1):
+                plt.figure(figsize=(10, 8))
+                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+                plt.title(f'Confusion Matrix - Epoch {epoch}')
+                plt.xlabel('Predicted Labels')
+                plt.ylabel('True Labels')
+                plt.show()
+
+experiment_ids = ['exp_all_ciphers_1000_samples_complex', 
+                  'exp_all_ciphers_10000_samples_complex', 
+                  'exp_all_ciphers_100000_samples_complex']
+plot_confusion_matrices('data/experiments.yaml', experiment_ids)
 
 '''
 a test model specified with:
@@ -47,6 +71,21 @@ for data params, we have
     try:
         test_filename, generated = manage_sample_data(test_cipher_names, test_num_samples, test_sample_length)
 '''
+
+
+def query_experiments_metrics(file_path='data/experiments.yaml'):
+    with open(file_path, 'r') as file:
+        experiments = yaml.safe_load(file) or []
+
+    for exp in experiments:
+        exp_id = exp.get('experiment_id', 'N/A')
+        metrics = exp.get('metrics', {})
+        train_loss = metrics.get('train_loss', ['N/A'] * 5)  # Assuming 5 epochs as default
+        val_accuracy = metrics.get('val_accuracy', ['N/A'] * 5)  # Assuming 5 epochs as default
+
+        loss_str = ', '.join([f"{loss:.4f}" for loss in train_loss])
+        acc_str = ', '.join([f"{accuracy:.4f}" for accuracy in val_accuracy])
+        print(f"{exp_id}: Loss: {loss_str} | Accuracy: {acc_str}")
 
 
 def convert_ndarray_to_list(obj):
@@ -115,7 +154,8 @@ def update_experiment_file(file_path, experiments):
 def main():
     experiment_details = read_experiment('data/experiments.yaml')
     if not experiment_details:
-        print("Experiment not found.")
+        print("No experiments found.")
+    query_experiments_metrics()
 
 if __name__ == "__main__":
     main()
