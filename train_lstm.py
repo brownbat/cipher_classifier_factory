@@ -57,7 +57,8 @@ class LSTMClassifier(nn.Module):
             dropout=dropout_rate)
         self.fc = nn.Linear(hidden_dim, output_dim)
         self.activation = activation_func
-
+        self.output_activation = nn.Softmax(dim=1)
+        
     def forward(self, x):
         x = self.embedding(x)
         lstm_out, _ = self.lstm(x)
@@ -65,6 +66,7 @@ class LSTMClassifier(nn.Module):
         x = self.fc(x)
         if self.activation:
             x = self.activation(x)
+        x = self.output_activation(x)
         return x
 
 
@@ -300,6 +302,9 @@ def train_model(data, hyperparams):
               + f"{val_loss/len(val_loader):.4f}, Validation Accuracy: "
               + f"{val_accuracy:.4f}")
         # print(conf_matrix)
+    print("Final layer weights: ", model.fc.weight)  # DEBUG
+    print("Final layer biases: ", model.fc.bias)  # DEBUG
+
 
     return model, training_metrics
 

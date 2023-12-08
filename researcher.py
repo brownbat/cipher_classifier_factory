@@ -28,50 +28,6 @@ experiment_ids = ['exp_all_ciphers_1000_samples_complex',
                   'exp_all_ciphers_100000_samples_complex']
 plot_confusion_matrices('data/experiments.yaml', experiment_ids)
 
-'''
-a test model specified with:
-        hyperparams = {
-            'epochs': 3,
-            'learning_rate': 0.001,
-            'batch_size': 32,
-            'embedding_dim': 128,
-            'hidden_dim': 128,
-            'activation_func': 'relu'
-        }
-in train_model we have
-    # Extract hyperparameters
-    epochs = hyperparams.get('epochs', 5)
-    learning_rate = hyperparams.get('learning_rate', 0.001)
-    batch_size = hyperparams.get('batch_size', BATCH_SIZE)
-    embedding_dim = hyperparams.get('embedding_dim', EMBEDDING_DIM)
-    hidden_dim = hyperparams.get('hidden_dim', HIDDEN_DIM)
-    vocab_size = hyperparams.get('vocab_size', VOCAB_SIZE)
-    num_classes = len(np.unique(data['cipher']))
-    activation_name = hyperparams.get('activation_func', None)
-    activation_func = get_activation_function(activation_name)
-
-no loss function, assuming crossentropy would be all we'd need.
-we can add it later. we'll use yaml and group things as data parameters, hyperparametercs, and performance metrics.
-some performance metrics should be grouped by epoch.
-
-we currently collect
-     training_metrics = {
-        'train_loss': [],
-        'val_loss': [],
-        'val_accuracy': [],
-        'conf_matrix': []}
-but could do more.
-
-for data params, we have 
-    # Example test call
-    test_cipher_names = ["caesar", "vigenere"]  # Replace with available ciphers
-    test_num_samples = 2500
-    test_sample_length = 500
-
-    try:
-        test_filename, generated = manage_sample_data(test_cipher_names, test_num_samples, test_sample_length)
-'''
-
 
 def query_experiments_metrics(file_path='data/experiments.yaml'):
     with open(file_path, 'r') as file:
