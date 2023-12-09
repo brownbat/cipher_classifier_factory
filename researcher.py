@@ -4,6 +4,8 @@ from train_lstm import train_model, get_data
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import os
+
 
 def plot_confusion_matrices(file_path, experiment_ids):
     with open(file_path, 'r') as file:
@@ -11,22 +13,17 @@ def plot_confusion_matrices(file_path, experiment_ids):
 
     for exp in experiments:
         if exp['experiment_id'] in experiment_ids:
-            print(f"Experiment ID: {exp['experiment_id']}")
-            metrics = exp.get('metrics', {})
+            metrics = exp.get('metrics', {}) or {}
             conf_matrices = metrics.get('conf_matrix', [])
             
             for epoch, cm in enumerate(conf_matrices, start=1):
+                # print(cm)
                 plt.figure(figsize=(10, 8))
                 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
                 plt.title(f'Confusion Matrix - Epoch {epoch}')
                 plt.xlabel('Predicted Labels')
                 plt.ylabel('True Labels')
                 plt.show()
-
-experiment_ids = ['exp_all_ciphers_1000_samples_complex', 
-                  'exp_all_ciphers_10000_samples_complex', 
-                  'exp_all_ciphers_100000_samples_complex']
-plot_confusion_matrices('data/experiments.yaml', experiment_ids)
 
 
 def query_experiments_metrics(file_path='data/experiments.yaml'):
@@ -60,6 +57,7 @@ def print_experiment_details(exp):
     hyperparams = exp.get('hyperparams', {})
     metrics = exp.get('metrics', {})
 
+    print("Experiment details")
     print(f"Experiment ID: {exp.get('experiment_id', 'N/A')}")
     ciphers_used = ', '.join(data_params.get('ciphers', []))
     print(f"Ciphers Used: {ciphers_used}")
@@ -111,7 +109,13 @@ def main():
     experiment_details = read_experiment('data/experiments.yaml')
     if not experiment_details:
         print("No experiments found.")
+    experiment_ids = ['exp_all_ciphers_5000_samples_complex', 
+                  'exp_all_ciphers_7500_samples_complex']
+    plot_confusion_matrices('data/experiments.yaml', experiment_ids)
+
+    print("Experiment metrics:")
     query_experiments_metrics()
+
 
 if __name__ == "__main__":
     main()

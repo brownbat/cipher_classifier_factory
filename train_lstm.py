@@ -59,16 +59,17 @@ class LSTMClassifier(nn.Module):
         self.activation = activation_func
         self.output_activation = nn.Softmax(dim=1)
         
-    def forward(self, x):
+    def forward(self, x, return_logits=False):
         x = self.embedding(x)
         lstm_out, _ = self.lstm(x)
         x = lstm_out[:, -1, :]
-        x = self.fc(x)
-        if self.activation:
-            x = self.activation(x)
-        x = self.output_activation(x)
-        return x
-
+        logits = self.fc(x)
+        return logits
+        '''if return_logits or not self.activation:
+            return logits  # return logits for CrossEntropyLoss
+        logits = self.activation(logits)
+        probabilities = self.output_activation(logits)
+        return probabilities'''
 
 def file_hash(filename):
     """Generate a hash for a file."""
@@ -263,26 +264,36 @@ def train_model(data, hyperparams):
                 train_loader,
                 desc=f'Epoch {epoch+1}/{epochs} - Training'):
             optimizer.zero_grad()
-            outputs = model(inputs)
-            
-            loss = criterion(outputs, labels)
+            logits = model(inputs, return_logits=True)  # Get logits
+            loss = criterion(logits, labels)
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
 
+            probabilities = model(inputs)  # Get probabilities for accuracy calculation
+            _, predicted = torch.max(probabilities.data, 1)
+            correct_predictions += (predicted == labels).sum().item()
+            all_predictions.extend(predicted.tolist())
+            all_true_labels.extend(labels.tolist())
+
         # Validation phase
         model.eval()
         val_loss = 0
+        correct_predictions = 0
+        all_predictions = []
+        all_true_labels = []
         with torch.no_grad():
             for inputs, labels in tqdm(
                     val_loader,
                     desc=f'Epoch {epoch+1}/{epochs} - Validation'):
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
+                logits = model(inputs, return_logits=True)  # Get logits
+                loss = criterion(logits, labels)
                 val_loss += loss.item()
 
+
                 # Calculate accuracy
-                _, predicted = torch.max(outputs.data, 1)
+                probabilities = model(inputs)
+                _, predicted = torch.max(probabilities.data, 1)
                 correct_predictions += (predicted == labels).sum().item()
                 all_predictions.extend(predicted.tolist())
                 all_true_labels.extend(labels.tolist())
@@ -302,8 +313,8 @@ def train_model(data, hyperparams):
               + f"{val_loss/len(val_loader):.4f}, Validation Accuracy: "
               + f"{val_accuracy:.4f}")
         # print(conf_matrix)
-    print("Final layer weights: ", model.fc.weight)  # DEBUG
-    print("Final layer biases: ", model.fc.bias)  # DEBUG
+    # print("Final layer weights: ", model.fc.weight)  # DEBUG
+    # print("Final layer biases: ", model.fc.bias)  # DEBUG
 
 
     return model, training_metrics
@@ -567,6 +578,7 @@ def run_basic_tests():
             'hidden_dim': 128,
             'activation_func': 'relu'
         }
+
 
         # Run a basic training cycle
         trained_model, training_metrics = train_model(data, hyperparams)

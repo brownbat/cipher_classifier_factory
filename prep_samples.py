@@ -141,6 +141,9 @@ def manage_sample_data(cipher_names=None, num_samples=1500, sample_length=500, m
     - filename: The filename of the .feather file with these samples
     - generated: whether the file was newly generated or retrieved (preexisting)
     """
+    # Clean up metadata before attempting to load or generate data
+    cleanup_metadata(metadata_file)
+
     # Initialize metadata if file doesn't exist or is empty
     if not os.path.exists(metadata_file) or os.stat(metadata_file).st_size == 0:
         metadata = {}
@@ -162,9 +165,11 @@ def manage_sample_data(cipher_names=None, num_samples=1500, sample_length=500, m
 
     if dataset_id in metadata:
         # Load existing dataset
+        print(f"Using existing dataset with id {dataset_id}")
         df = pd.read_feather(metadata[dataset_id]["filename"])
         filename = metadata[dataset_id]["filename"]
     else:
+        print(f"Building new dataset with id {dataset_id}")
         data_generated = True
         # Generate new dataset
         all_ciphers = ciphers._get_cipher_functions()
