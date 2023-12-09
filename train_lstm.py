@@ -38,38 +38,18 @@ VOCAB_SIZE = 27
 
 # Define LSTM Model
 class LSTMClassifier(nn.Module):
-    def __init__(
-            self,
-            vocab_size,
-            embedding_dim,
-            hidden_dim,
-            output_dim,
-            activation_func,
-            num_layers=1,
-            dropout_rate=0.0):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, output_dim):
         super(LSTMClassifier, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.lstm = nn.LSTM(
-            embedding_dim,
-            hidden_dim,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout_rate)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, batch_first=True)
         self.fc = nn.Linear(hidden_dim, output_dim)
-        self.activation = activation_func
-        self.output_activation = nn.Softmax(dim=1)
-        
-    def forward(self, x, return_logits=False):
+
+    def forward(self, x):
         x = self.embedding(x)
         lstm_out, _ = self.lstm(x)
-        x = lstm_out[:, -1, :]
-        logits = self.fc(x)
-        return logits
-        '''if return_logits or not self.activation:
-            return logits  # return logits for CrossEntropyLoss
-        logits = self.activation(logits)
-        probabilities = self.output_activation(logits)
-        return probabilities'''
+        lstm_out = lstm_out[:, -1, :]
+        out = self.fc(lstm_out)
+        return out
 
 def file_hash(filename):
     """Generate a hash for a file."""
@@ -155,13 +135,16 @@ def create_data_loaders(X, y, batch_size=BATCH_SIZE, validation_split=0.2):
     
     return train_loader, val_loader
 
-
+# WARNING: activation functions are implied by this model and by crossentropy
+# and should not be specified
 def is_valid_activation_function(func):
     # List of known PyTorch activation function classes
     valid_activation_funcs = [nn.ReLU, nn.GELU, nn.Sigmoid, nn.Tanh, nn.SiLU]
     return any(isinstance(func, cls) for cls in valid_activation_funcs)
 
 
+# WARNING: activation functions are implied by this model and by crossentropy
+# and should not be specified
 def get_activation_function(activation_input):
     """
     Returns the PyTorch activation function based on the input.
@@ -215,8 +198,12 @@ def train_model(data, hyperparams):
     hidden_dim = hyperparams.get('hidden_dim', HIDDEN_DIM)
     vocab_size = hyperparams.get('vocab_size', VOCAB_SIZE)
     num_classes = len(np.unique(data['cipher']))
-    activation_name = hyperparams.get('activation_func', None)
-    activation_func = get_activation_function(activation_name)
+
+    # WARNING: activation functions are implied by this model and by crossentropy
+    # and should not be specified
+
+    # activation_name = hyperparams.get('activation_func', None)
+    # activation_func = get_activation_function(activation_name)
 
     # Preprocess data
     X, y, token_dict, label_encoder = load_and_preprocess_data(data)
@@ -236,8 +223,7 @@ def train_model(data, hyperparams):
             vocab_size,
             embedding_dim,
             hidden_dim,
-            num_classes,
-            activation_func)
+            num_classes)
         print("Model initialized successfully.")
     except Exception as e:
         print(f"Model initialization failed: {e}")
@@ -264,7 +250,7 @@ def train_model(data, hyperparams):
                 train_loader,
                 desc=f'Epoch {epoch+1}/{epochs} - Training'):
             optimizer.zero_grad()
-            logits = model(inputs, return_logits=True)  # Get logits
+            logits = model(inputs)  # Get logits
             loss = criterion(logits, labels)
             loss.backward()
             optimizer.step()
@@ -286,7 +272,7 @@ def train_model(data, hyperparams):
             for inputs, labels in tqdm(
                     val_loader,
                     desc=f'Epoch {epoch+1}/{epochs} - Validation'):
-                logits = model(inputs, return_logits=True)  # Get logits
+                logits = model(inputs)  # Get logits
                 loss = criterion(logits, labels)
                 val_loss += loss.item()
 
@@ -551,17 +537,16 @@ def run_basic_tests():
             vocab_size=27,
             embedding_dim=128,
             hidden_dim=128,
-            output_dim=10,
-            activation_func=None)
+            output_dim=10)
         print("Model initialization test passed.")
     except Exception as e:
         print(f"Model initialization test failed: {e}")
 
     try:
         # Generate a small dataset
-        cipher_names = ['caesar', 'vigenere', 'english']
-        num_samples = 5000
-        sample_length = 100
+        cipher_names = ['caesar', 'vigenere', 'english', 'columnar_transposition']
+        num_samples = 10000
+        sample_length = 500
         filename, _ = prep_samples.manage_sample_data(
             cipher_names, num_samples, sample_length)
 
@@ -576,7 +561,6 @@ def run_basic_tests():
             'batch_size': 32,
             'embedding_dim': 128,
             'hidden_dim': 128,
-            'activation_func': 'relu'
         }
 
 

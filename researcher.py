@@ -105,13 +105,13 @@ def update_experiment_file(file_path, experiments):
     with open(file_path, 'w') as file:
         yaml.dump(experiments_converted, file)
 
+
 def main():
-    experiment_details = read_experiment('data/experiments.yaml')
-    if not experiment_details:
+    experiments = read_experiment('data/experiments.yaml')
+    if not experiments:
         print("No experiments found.")
-    experiment_ids = ['exp_all_ciphers_5000_samples_complex', 
-                  'exp_all_ciphers_7500_samples_complex']
-    plot_confusion_matrices('data/experiments.yaml', experiment_ids)
+    experiments = [exp['experiment_id'] for exp in experiments]
+    plot_confusion_matrices('data/experiments.yaml', experiments)
 
     print("Experiment metrics:")
     query_experiments_metrics()
