@@ -24,6 +24,7 @@ from PIL import Image as PILImage
 from IPython.display import Image as IPImage
 import imageio
 from ciphers import _get_cipher_functions, _get_cipher_names
+import time
 
 # TODO: feature engineering, index of coincidence, digraphs, trigraphs,
 #   skipgraphs, ioc for subsets
@@ -236,9 +237,11 @@ def train_model(data, hyperparams):
         'train_loss': [],
         'val_loss': [],
         'val_accuracy': [],
-        'conf_matrix': []}
+        'conf_matrix': [],
+        'training_time': 0}
 
     # Training loop
+    start_time = time.time()
     confusion_matrices = []
     for epoch in range(epochs):
         model.train()
@@ -301,7 +304,9 @@ def train_model(data, hyperparams):
         # print(conf_matrix)
     # print("Final layer weights: ", model.fc.weight)  # DEBUG
     # print("Final layer biases: ", model.fc.bias)  # DEBUG
-
+    end_time = time.time()
+    training_time = end_time - start_time
+    training_metrics['training_time'] = training_time
 
     return model, training_metrics
 

@@ -38,7 +38,8 @@ def query_experiments_metrics(file_path='data/experiments.yaml'):
 
         loss_str = ', '.join([f"{loss:.4f}" for loss in train_loss])
         acc_str = ', '.join([f"{accuracy:.4f}" for accuracy in val_accuracy])
-        print(f"{exp_id}: Loss: {loss_str} | Accuracy: {acc_str}")
+        training_time = metrics.get('training_time', 0)
+        print(f"{exp_id}: Loss: {loss_str} | Accuracy: {acc_str} | Training time: {training_time}")
 
 
 def convert_ndarray_to_list(obj):
