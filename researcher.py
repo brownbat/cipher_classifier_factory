@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
+import notifications
 
 
 def plot_confusion_matrices(file_path, experiment_ids):
@@ -30,6 +31,7 @@ def query_experiments_metrics(file_path='data/experiments.yaml'):
     with open(file_path, 'r') as file:
         experiments = yaml.safe_load(file) or []
 
+    outstr = ""
     for exp in experiments:
         exp_id = exp.get('experiment_id', 'N/A')
         metrics = exp.get('metrics', {})
@@ -39,7 +41,10 @@ def query_experiments_metrics(file_path='data/experiments.yaml'):
         loss_str = ', '.join([f"{loss:.4f}" for loss in train_loss])
         acc_str = ', '.join([f"{accuracy:.4f}" for accuracy in val_accuracy])
         training_time = metrics.get('training_time', 0)
-        print(f"{exp_id}: Loss: {loss_str} | Accuracy: {acc_str} | Training time: {training_time}")
+        outstr += (f"{exp_id}: Loss: {loss_str} | Accuracy: {acc_str} | Training time: {training_time}")
+        outstr += "\n"
+    return outstr
+        
 
 
 def convert_ndarray_to_list(obj):
@@ -112,10 +117,12 @@ def main():
     if not experiments:
         print("No experiments found.")
     experiments = [exp['experiment_id'] for exp in experiments]
-    plot_confusion_matrices('data/experiments.yaml', experiments)
 
-    print("Experiment metrics:")
-    query_experiments_metrics()
+    metrics = "Experiment metrics:\n"
+    metrics += query_experiments_metrics()
+    print(metrics)
+    # notifications.send_email(metrics)
+    plot_confusion_matrices('data/experiments.yaml', experiments)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,8 @@
 *.feather
 *_processed.txt
 *.yaml
+cred*
+credentials.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
