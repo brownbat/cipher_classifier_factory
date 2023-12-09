@@ -301,9 +301,7 @@ def train_model(data, hyperparams):
               + f"{train_loss/len(train_loader):.4f}, Validation Loss: "
               + f"{val_loss/len(val_loader):.4f}, Validation Accuracy: "
               + f"{val_accuracy:.4f}")
-        # print(conf_matrix)
-    # print("Final layer weights: ", model.fc.weight)  # DEBUG
-    # print("Final layer biases: ", model.fc.bias)  # DEBUG
+
     end_time = time.time()
     training_time = end_time - start_time
     training_metrics['training_time'] = training_time

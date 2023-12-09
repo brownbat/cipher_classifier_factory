@@ -5,6 +5,9 @@
 *.yaml
 cred*
 credentials.json
+*.gif
+*.png
+*.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

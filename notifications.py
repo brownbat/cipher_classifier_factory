@@ -2,9 +2,14 @@ import smtplib
 import json
 from email.mime.text import MIMEText
 import time
+import requests
 
-def get_credentials(file_path):
-    with open(file_path, 'r') as file:
+FILE_PATH = 'credentials.json'
+
+def get_credentials(f_path=None):
+    if f_path is None:
+        f_path = FILE_PATH
+    with open(f_path, 'r') as file:
         credentials = json.load(file)
     return credentials
 
@@ -16,7 +21,6 @@ def send_email(message=None, test=False):
     sender = email
     receiver = email
     password = password  # App password you generated
-    current_time = time.ctime(time.time())
     subject = "Training job notification"
     message = f"Training job completed at {current_time}.\n" + message
     if test:
@@ -35,6 +39,27 @@ def send_email(message=None, test=False):
     print("Email sent successfully.")
 
 
+def send_discord_notification(message):
+    current_time = time.ctime(time.time())
+    message = f"Training job completed at {current_time}.\n" + message
+    
+    data = {
+        "content": message,
+        "username": "Cipher Classifier"
+    }
+
+    credentials = get_credentials()
+    webhook = credentials['webhook']
+    result = requests.post(webhook, json=data)
+
+    try:
+        result.raise_for_status()
+    except requests.exceptions.HTTPError as err:
+        print(err)
+    else:
+        print("Payload delivered successfully, code {}.".format(result.status_code))
+
 if __name__ == "__main__":
-    send_email(test=True)
+    # send_email(test=True)
+    send_discord_notification("TEST")
 
