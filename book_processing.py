@@ -104,13 +104,21 @@ def extract_main_content(text):
     """
     Extracts the main content of the book from the given text.
     """
-    start_marker = "*** START OF THIS PROJECT GUTENBERG EBOOK"
-    end_marker = "*** END OF THIS PROJECT GUTENBERG EBOOK"
-    start_index = text.find(start_marker) + len(start_marker)
-    end_index = text.find(end_marker)
+    start_pattern = r"\*\*\* START OF (THIS|THE) PROJECT GUTENBERG EBOOK"
+    end_pattern = r"\*\*\* END OF (THIS|THE) PROJECT GUTENBERG EBOOK"
 
-    return text[start_index:end_index]
+    start_match = re.search(start_pattern, text)
+    end_match = re.search(end_pattern, text)
 
+    if start_match and end_match:
+        start_index = start_match.end()
+        end_index = end_match.start()
+        return text[start_index:end_index].strip()
+
+    # Handle error or return a default value if markers are not found
+    print("Could not find Project Gutenberg markers, returning full text")
+    return text
+    
 
 def download_and_store_book(book_id, failed_book_ids):
     """

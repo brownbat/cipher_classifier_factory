@@ -191,13 +191,15 @@ def train_model(data, hyperparams):
     - training_metrics (dict): Metrics and stats from the training process,
         like loss and accuracy.
     """
-    # Extract hyperparameters
-    epochs = hyperparams.get('epochs', 5)
-    learning_rate = hyperparams.get('learning_rate', 0.001)
-    batch_size = hyperparams.get('batch_size', BATCH_SIZE)
-    embedding_dim = hyperparams.get('embedding_dim', EMBEDDING_DIM)
-    hidden_dim = hyperparams.get('hidden_dim', HIDDEN_DIM)
-    vocab_size = hyperparams.get('vocab_size', VOCAB_SIZE)
+    # Extract hyperparameters - NO DEFAULTS, must be fully specified
+    epochs = hyperparams['epochs']
+    learning_rate = hyperparams['learning_rate']
+    batch_size = hyperparams['batch_size']
+    embedding_dim = hyperparams['embedding_dim']
+    hidden_dim = hyperparams['hidden_dim']
+
+    # ok vocab size can be a default it's basically fixed
+    vocab_size = hyperparams.get('vocab_size', 27)
     num_classes = len(np.unique(data['cipher']))
 
     # WARNING: activation functions are implied by this model and by crossentropy
@@ -237,8 +239,7 @@ def train_model(data, hyperparams):
         'train_loss': [],
         'val_loss': [],
         'val_accuracy': [],
-        'conf_matrix': [],
-        'training_time': 0}
+        'conf_matrix': []}
 
     # Training loop
     start_time = time.time()
@@ -305,7 +306,6 @@ def train_model(data, hyperparams):
     end_time = time.time()
     training_duration = end_time - start_time
     training_metrics['training_duration'] = training_duration
-
     return model, training_metrics
 
 

@@ -20,8 +20,7 @@ def plot_confusion_matrices(file_path='data/completed_experiments.yaml'):
 
     for exp in experiments:
         # Check if metrics and training_time are available
-        if ('metrics' in exp
-                and 'training_time' in exp['metrics']
+        if ('metrics' in exp and 'training_time' in exp
                 and 'conf_matrix' in exp['metrics']):
 
             unique_id = f'{exp["experiment_id"]}_{exp["training_time"]}'
@@ -446,7 +445,15 @@ def generate_experiments(settings={}, file_path='data/pending_experiments.yaml')
             'num_samples': combination.pop('num_samples', 1000),
             'sample_length': combination.pop('sample_length', 200)
         }
-        hyperparams = combination  # Remaining items are hyperparameters
+        hyperparams = {
+            'epochs': combination.get('epochs', 3),
+            'num_layers': combination.get('num_layers', 10),
+            'batch_size': combination.get('batch_size', 32),
+            'embedding_dim': combination.get('embedding_dim', 32),
+            'hidden_dim': combination.get('hidden_dim', 64),
+            'dropout_rate': combination.get('dropout_rate', 0.015),
+            'learning_rate': combination.get('learning_rate', 0.002)
+        }
 
         experiment = {
             'data_params': data_params,
@@ -481,9 +488,9 @@ def main():
     # add default experiments to the pending_experiments file
     params = {
             'num_samples': [1000,2000,3000],
-            'sample_length': [200,400],
-            'epochs': [3,5],
-            'num_layers': [10,20],
+            'sample_length': [200,400,600],
+            'epochs': 3,
+            'num_layers': 10,
             'batch_size': 32,
             'embedding_dim': 32,
             'hidden_dim': 64,

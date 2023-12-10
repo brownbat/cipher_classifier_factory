@@ -8,6 +8,8 @@ import os
 import random
 
 
+# rolled back to working version with tuples
+
 def generate_colors(num_colors, saturation=40, lightness=40):
     """Generate 'num_colors' distinct pastel colors in HSL format."""
     for i in range(num_colors):
