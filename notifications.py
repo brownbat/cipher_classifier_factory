@@ -2,7 +2,6 @@ import smtplib
 import json
 from email.mime.text import MIMEText
 import time
-import requests
 
 FILE_PATH = 'credentials.json'
 
@@ -15,6 +14,7 @@ def get_credentials(f_path=None):
 
 
 def send_email(message=None, test=False):
+    current_time = time.ctime(time.time())
     credentials = get_credentials('credentials.json')
     email = credentials['email']
     password = credentials['password']

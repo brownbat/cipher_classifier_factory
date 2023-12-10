@@ -176,7 +176,7 @@ def main():
     print(metrics)
 
     if trained_experiments:
-        notifications.send_email(metrics)
+        notifications.send_discord_notification(metrics)
     plot_confusion_matrices('data/experiments.yaml')
 
 
