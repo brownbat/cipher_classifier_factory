@@ -1,4 +1,5 @@
 import datetime
+import itertools
 import json
 import notifications
 import os
@@ -155,7 +156,7 @@ def get_experiment_details(exp):
         final_loss = metrics.get('val_loss', ['N/A'])[-1]
         details.append(f"Final Loss: {final_loss:.4f}")
         final_accuracy = metrics.get('val_accuracy', ['N/A'])[-1]
-        details.append(f"Final Accuracy: {final_loss:.4f}")
+        details.append(f"Final Accuracy: {final_accuracy:.4f}")
     else:
         details.append("Metrics not available.")
 
@@ -199,7 +200,7 @@ def run_experiments(pending_file, completed_file):
         append_to_experiment_file(completed_file, exp)
 
         # Add trained experiment ID to the list
-        trained_experiments.append(exp['experiment_id'])
+        trained_experiments.append(exp['uid'])
 
         print(f"Experiment {exp['experiment_id']} completed.")
         print(get_experiment_details(exp))
@@ -210,8 +211,36 @@ def run_experiments(pending_file, completed_file):
     return trained_experiments
 
 
+def run_experiment(exp):
+    '''
+    Runs one experiment and writes results to completed_experiments.yaml
+    '''
+    data_params = exp.get('data_params', {})
+    hyperparams = exp.get('hyperparams', {})
 
-def read_experiments(file_path, exp_id=None):
+    # Append timestamp to the experiment ID for uniqueness
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    data = get_data(data_params)
+    print(f"Running experiment: {exp['experiment_id']}...")
+    model, metrics = train_model(data, hyperparams)
+    exp['metrics'] = convert_ndarray_to_list(metrics)
+
+    # Update experiment details with results
+    exp['training_time'] = timestamp
+    unique_id = f'{exp["experiment_id"]}_{exp["training_time"]}'
+    exp['uid'] = unique_id
+    print(f"Experiment {exp['experiment_id']} completed")
+    print(f"  now called: {exp['uid']}")
+    
+    model_filename = f'data/models/{unique_id}.pt'
+    exp['model_filename'] = model_filename
+    torch.save(model.state_dict(), model_filename)
+
+    return exp
+
+
+def read_experiments(file_path, exp_uid=[]):
     '''
     Fetches experiment results from completed_experiments.yaml and returns their details.
     '''
@@ -221,22 +250,21 @@ def read_experiments(file_path, exp_id=None):
         experiments = yaml.safe_load(file) or []
 
     for exp in experiments:
-        if exp_id is not None and exp['experiment_id'] != exp_id:
-            continue  # Skip if a specific experiment ID is provided and does not match
-
-        metrics = exp.get('metrics', {})
-        if not metrics:
-            warning_message = f"WARNING: No metrics available for experiment {exp['experiment_id']}!"
-            experiment_details.append(warning_message)
-        else:
-            details = get_experiment_details(exp)
-            experiment_details.append(details)
+        # report on matching experiments, or ALL if exp_uid is []
+        if exp_uid == [] or exp['uid'] in exp_uid:  
+            metrics = exp.get('metrics', {})
+            if not metrics:
+                warning_message = f"WARNING: No metrics available for experiment {exp['experiment_id']}!"
+                experiment_details.append(warning_message)
+            else:
+                details = get_experiment_details(exp)
+                experiment_details.append(details)
 
     return '\n\n'.join(experiment_details)  # Join all experiment details with a double newline
 
 
 def rewrite_experiment_file(file_path, experiments):
-    # Convert all ndarray objects in experiments to lists
+    #  Convert all ndarray objects in experiments to lists
     experiments_converted = convert_ndarray_to_list(experiments)
 
     with open(file_path, 'w') as file:
@@ -290,39 +318,220 @@ def clean_up_files(
     if test_mode:
         print("Testing only, no files deleted")
     else:
-        confirmed = input("Confirm you want to delete these files by typing 'DELETE' in all caps: ")
-        if confirmed:
+        # confirmed = input("Confirm you want to delete these files by typing 'DELETE' in all caps: ")
+        confirmed = True
+        if confirmed and files_to_delete:
             for f in files_to_delete:
                 os.remove(f)
+            print("All files deleted")
         else:
             print("No files deleted")
 
     return files_to_delete
 
 
+def get_pending_experiments(pending_file='data/pending_experiments.yaml'):
+    with open(pending_file, 'r') as file:
+        return yaml.safe_load(file) or []
+
+
+def reformat_completed_experiments(file_path):
+    with open(file_path, 'r') as file:
+        experiments = yaml.safe_load(file) or []
+
+    reformatted_experiments = []
+
+    for exp in experiments:
+        uid = exp.get('uid', 'unknown_uid')
+        reformatted_experiment = {uid: exp}
+        reformatted_experiments.append(reformatted_experiment)
+
+    with open(file_path, 'w') as file:
+        yaml.dump(reformatted_experiments, file)
+
+
+def experiment_key(experiment):
+    data_params = experiment.get('data_params', {})
+    hyperparams = experiment.get('hyperparams', {})
+
+    key_parts = [
+        json.dumps(data_params, sort_keys=True),
+        json.dumps(hyperparams, sort_keys=True)
+    ]
+
+    return '|'.join(key_parts)
+
+
+def get_completed_experiment_keys(file_path="data/completed_experiments.yaml"):
+    completed_experiment_keys = set()
+
+    with open(file_path, 'r') as file:
+        experiments = yaml.safe_load(file) or []
+
+    for exp in experiments:
+        key = experiment_key(exp)
+        completed_experiment_keys.add(key)
+
+    return completed_experiment_keys
+
+
+def reset_pending_experiments(file_path="data/pending_experiments.yaml"):
+    default_experiment = {
+        'data_params': {
+            'ciphers': ['english', 'vigenere', 'columnar_transposition'],
+            'num_samples': 1000,
+            'sample_length': 200
+        },
+        'experiment_id': 'exp_1',
+        'hyperparams': {
+            'batch_size': 32,
+            'dropout_rate': 0.015,
+            'embedding_dim': 32,
+            'epochs': 3,
+            'hidden_dim': 64,
+            'learning_rate': 0.003,
+            'num_layers': 10
+        }
+    }
+
+    with open(file_path, 'w') as file:
+        yaml.dump([default_experiment], file)
+
+
+def generate_experiments(settings={}, file_path='data/pending_experiments.yaml'):
+    print("Generating new experiments to run based off of settings:")
+    print(settings)
+    print()
+    default_params = {
+        'ciphers': _get_cipher_names(),  # Default ciphers
+        'num_samples': 1000,
+        'sample_length': 200,
+        'epochs': 3,
+        'num_layers': 10,
+        'batch_size': 32,
+        'embedding_dim': 32,
+        'hidden_dim': 64,
+        'dropout_rate': 0.015,
+        'learning_rate': 0.002
+    }
+
+    # Update default_params with provided settings
+    for key, value in settings.items():
+        default_params[key] = value
+
+    # Separate list and non-list parameters
+    ciphers = default_params.pop('ciphers', _get_cipher_names())
+    list_params = {k: v for k, v in default_params.items() if isinstance(v, (list, tuple))}
+    non_list_params = {k: v for k, v in default_params.items() if not isinstance(v, (list, tuple))}
+
+    # Handle 'ciphers' based on its type
+    if isinstance(ciphers[0], (list, tuple)):
+        list_params['ciphers'] = ciphers
+    else:
+        non_list_params['ciphers'] = ciphers
+    if list_params:
+        # Compute all combinations of list parameters
+        keys, values = zip(*list_params.items())
+        combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
+    else:
+        print("No variable parameters found. Adding a single experiment.")
+        combinations = [{}]
+
+    experiment_id_counter = 1
+    experiments = []
+    for combination in combinations:
+        # Extract and correctly structure data_params and hyperparams
+        data_params = {
+            'ciphers': combination.pop('ciphers', _get_cipher_names()),
+            'num_samples': combination.pop('num_samples', 1000),
+            'sample_length': combination.pop('sample_length', 200)
+        }
+        hyperparams = combination  # Remaining items are hyperparameters
+
+        experiment = {
+            'data_params': data_params,
+            'hyperparams': hyperparams,
+            'experiment_id': f'exp_{experiment_id_counter}'
+        }
+        experiments.append(experiment)
+        experiment_id_counter += 1
+
+
+    testing = False
+    if testing:
+        for e in experiments:
+            print(e)
+        return
+
+    # Append to existing experiments
+    with open(file_path, 'r') as file:
+        existing_experiments = yaml.safe_load(file) or []
+    existing_experiments.extend(experiments)
+
+    with open(file_path, 'w') as file:
+        yaml.dump(existing_experiments, file)
+
+
 def main():
+    # for experiments with previously run keys (settings) --
+    # options: SKIP (current), re-run and add, re-run and overwrite, prompt user
+    # if you skip it, should you delete it from researcher.py?
+    # TODO: add a key or hash of key to the exp in the file
+
+    # add default experiments to the pending_experiments file
+    params = {
+            'num_samples': [1000,2000,3000],
+            'sample_length': [200,400],
+            'epochs': [3,5],
+            'num_layers': [10,20],
+            'batch_size': 32,
+            'embedding_dim': 32,
+            'hidden_dim': 64,
+            'dropout_rate': 0.015,
+            'learning_rate': 0.002
+        }
+
+
+    generate_experiments(params)
+    
     # Run experiments from the pending file
-    trained_experiments = run_experiments(
-        'data/pending_experiments.yaml', 'data/completed_experiments.yaml')
+    pending_experiments = get_pending_experiments()
+    completed_keys = get_completed_experiment_keys()
+
+    trained_experiments = []
+    for exp in pending_experiments.copy():
+        exp_key = experiment_key(exp)
+        if exp_key in completed_keys:
+            print(f"Skipping experiment already run with key:\n{exp_key}\n")
+            continue
+        updated_exp = run_experiment(exp)
+        experiment_details = get_experiment_details(updated_exp)
+        print(experiment_details)
+
+        notification_msg = "Training experiment completed"
+        notification_msg += experiment_details
+        notifications.send_discord_notification(notification_msg)
+
+        trained_experiments.append(updated_exp['uid'])
+        append_to_experiment_file(
+            'data/completed_experiments.yaml', updated_exp)
+        pending_experiments.remove(exp)
+        # Update the pending experiments file with the remaining experiments
+        # need to get experiments from somewhere
+        rewrite_experiment_file(
+            'data/pending_experiments.yaml', pending_experiments)
 
     if not trained_experiments:
         print("No new training occurred.")
     else:
-        # Fetch and print the details of newly trained experiments
-        new_experiment_results = read_experiments(
-            'data/completed_experiments.yaml', exp_id=trained_experiments)
-        print("New Experiment Results:\n" + new_experiment_results)
-
-        # Send a notification with the results of the new experiments
-        print("new experiment results to send to discord")
-        print("*****")
-        print(new_experiment_results) # DEBUG
-        print("*****")
-        notifications.send_discord_notification(new_experiment_results)
+        # Notification training batch is complete
+        notifications.send_discord_notification(
+            "Pending experiments batch complete")
 
         # Plot confusion matrices for the new experiments
         plot_confusion_matrices()
-    clean_up_files()
+    clean_up_files(test_mode=False)
+    # reformat_completed_experiments('data/completed_experiments.yaml')
 
 
 if __name__ == "__main__":
