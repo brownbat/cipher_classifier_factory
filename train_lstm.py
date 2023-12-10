@@ -303,8 +303,8 @@ def train_model(data, hyperparams):
               + f"{val_accuracy:.4f}")
 
     end_time = time.time()
-    training_time = end_time - start_time
-    training_metrics['training_time'] = training_time
+    training_duration = end_time - start_time
+    training_metrics['training_duration'] = training_duration
 
     return model, training_metrics
 
