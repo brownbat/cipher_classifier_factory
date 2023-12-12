@@ -18,6 +18,7 @@ import time
 # Global flag and queue for communication
 should_continue = True
 
+
 def signal_handler(sig, frame):
     global should_continue
     print('Ctrl+C pressed, preparing to exit...')
@@ -372,6 +373,24 @@ def experiment_key(experiment):
     return '|'.join(key_parts)
 
 
+def experiment_exists(key, pending_file, completed_file):
+    # Check in pending experiments
+    with open(pending_file, 'r') as file:
+        pending_experiments = yaml.safe_load(file) or []
+        for exp in pending_experiments:
+            if experiment_key(exp) == key:
+                return "PENDING"
+    
+    # Check in completed experiments
+    with open(completed_file, 'r') as file:
+        completed_experiments = yaml.safe_load(file) or []
+        for exp in completed_experiments:
+            if experiment_key(exp) == key:
+                return "COMPLETED"
+   
+    return False
+
+
 def get_completed_experiment_keys(file_path="data/completed_experiments.yaml"):
     completed_experiment_keys = set()
 
@@ -408,7 +427,16 @@ def reset_pending_experiments(file_path="data/pending_experiments.yaml"):
         yaml.dump([default_experiment], file)
 
 
-def generate_experiments(settings={}, file_path='data/pending_experiments.yaml'):
+def load_experiment_keys(file_path):
+    with open(file_path, 'r') as file:
+        experiments = yaml.safe_load(file) or []
+        return {experiment_key(exp) for exp in experiments}
+
+
+def generate_experiments(settings={}, pending_file='data/pending_experiments.yaml', completed_file='data/completed_experiments.yaml', rerun=False):
+    # TODO - consider hashing the experiment_key and using it in a hash table to
+    # speed lookups for experiment collisions
+    # TODO - responsibly overwrite an old experiment if rerun=True 
     print("Generating new experiments to run based off of settings:")
     print(settings)
     print()
@@ -475,20 +503,40 @@ def generate_experiments(settings={}, file_path='data/pending_experiments.yaml')
         experiment_id_counter += 1
 
 
+    # Append to existing experiments if they don't already exist
+    pending_keys = load_experiment_keys(pending_file)
+    completed_keys = load_experiment_keys(completed_file)
+    new_experiments = []
+    print(f"Considering {len(experiments)} experiments for duplicates.")
+    for exp in experiments:
+        key = experiment_key(exp)
+        if key not in pending_keys:
+            if rerun or key not in completed_keys:
+                new_experiments.append(exp)
+    
     testing = False
     if testing:
         for e in experiments:
             print(e)
-        print(f"This would run {len(experiments)} experiments.")
+            
+    print(f"There are {len(pending_keys)} pending and {len(completed_keys)} completed experiments.")
+    print(f"These new parameters generate {len(experiments)} experiments.")
+    print(f"Of these, {len(new_experiments)} are new.")
+
+    if testing:
         return
 
-    # Append to existing experiments
-    with open(file_path, 'r') as file:
-        existing_experiments = yaml.safe_load(file) or []
-    existing_experiments.extend(experiments)
+    existing_pending_experiments.extend(new_experiments)
 
-    with open(file_path, 'w') as file:
-        yaml.dump(existing_experiments, file)
+    if new_experiments:
+        with open(pending_file, 'r') as file:
+            existing_pending_experiments = yaml.safe_load(file) or []
+        existing_pending_experiments.extend(new_experiments)
+
+        with open(pending_file, 'w') as file:
+            yaml.dump(existing_pending_experiments, file)
+    else:
+        print("No new experiments to add.")
 
 
 def main():
@@ -527,6 +575,7 @@ def main():
 
     trained_experiments = []
     for exp in pending_experiments.copy():
+        print("Press `Ctrl+C` at any time to exit cleanly after this experiment completes.")
         if not should_continue:
             print("Exit command received. Stopping further processing.")
             break
