@@ -12,6 +12,17 @@ import imageio.v2 as imageio
 from train_lstm import train_model, get_data
 from ciphers import _get_cipher_names
 
+import signal
+import time
+
+# Global flag and queue for communication
+should_continue = True
+
+def signal_handler(sig, frame):
+    global should_continue
+    print('Ctrl+C pressed, preparing to exit...')
+    should_continue = False
+
 
 def plot_confusion_matrices(file_path='data/completed_experiments.yaml'):
     print('Plotting...')
@@ -468,6 +479,7 @@ def generate_experiments(settings={}, file_path='data/pending_experiments.yaml')
     if testing:
         for e in experiments:
             print(e)
+        print(f"This would run {len(experiments)} experiments.")
         return
 
     # Append to existing experiments
@@ -486,16 +498,22 @@ def main():
     # TODO: add a key or hash of key to the exp in the file
 
     # add default experiments to the pending_experiments file
+
+    global should_continue
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    # WARNING DO NOT RUN, this would be 12960 experiments and might break storage
     params = {
             'num_samples': [1000,2000,3000],
             'sample_length': [200,400,600],
-            'epochs': 3,
-            'num_layers': 10,
-            'batch_size': 32,
+            'epochs': [10, 20, 30],
+            'num_layers': [5, 10, 15, 20],
+            'batch_size': [32, 64],
             'embedding_dim': 32,
-            'hidden_dim': 64,
-            'dropout_rate': 0.015,
-            'learning_rate': 0.002
+            'hidden_dim': [32, 64, 128, 256],
+            'dropout_rate': [0.01, 0.015, 0.02],
+            'learning_rate': [0.001, 0.002, 0.003],
         }
 
 
@@ -505,8 +523,14 @@ def main():
     pending_experiments = get_pending_experiments()
     completed_keys = get_completed_experiment_keys()
 
+
+
     trained_experiments = []
     for exp in pending_experiments.copy():
+        if not should_continue:
+            print("Exit command received. Stopping further processing.")
+            break
+        
         exp_key = experiment_key(exp)
         if exp_key in completed_keys:
             print(f"Skipping experiment already run with key:\n{exp_key}\n")

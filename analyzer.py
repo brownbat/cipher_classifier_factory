@@ -18,19 +18,21 @@ def generate_colors(num_colors, saturation=40, lightness=40):
         yield f"hsl({hue}, {saturation}%, {lightness}%)"  # Adjusted Saturation and Lightness for pastel effect
 
 
-def get_slider_config(df):
+def get_slider_config(df, columns):
     slider_config = {}
 
-    for column in df.columns:
-        unique_values = sorted(df[column].unique())
-        marks = {int(val) if isinstance(val, float) and val.is_integer() else val: str(val) for val in unique_values}
-        slider_config[column] = {
-            'min': min(unique_values),
-            'max': max(unique_values),
-            'marks': marks
-        }
+    for column in columns:
+        if column in df.columns:
+            unique_values = sorted(df[column].unique())
+            marks = {int(val) if isinstance(val, float) and val.is_integer() else val: str(val) for val in unique_values}
+            slider_config[column] = {
+                'min': min(unique_values),
+                'max': max(unique_values),
+                'marks': marks
+            }
 
     return slider_config
+
 
 
 def generate_slider_css(num_sliders):
@@ -66,96 +68,70 @@ def get_varying_columns(df):
     return varying_columns
 
 
+def print_layout_ids(component, prefix=""):
+    # If the component has an 'id', print it
+    if getattr(component, 'id', None):
+        print(f"{prefix}{component.id}")
+
+    # If the component has children, recursively print their IDs
+    if getattr(component, 'children', None):
+        if isinstance(component.children, list):
+            for child in component.children:
+                print_layout_ids(child, prefix + "  ")
+        else:
+            print_layout_ids(component.children, prefix + "  ")
+
+
 def setup_dash_app(data):
     app = dash.Dash(__name__)
 
-    # Convert data to DataFrame if it's not already
     if not isinstance(data, pd.DataFrame):
         df = pd.DataFrame(data)
     else:
         df = data
 
-    varying_columns = get_varying_columns(df)
-    slider_config = get_slider_config(df)
-
-    num_params = len(varying_columns)
+    # Only create sliders for columns that vary
+    varying_columns = ['sample_length', 'num_samples']
+    slider_config = get_slider_config(df, varying_columns)
 
     html_output = [dcc.Graph(id='output-graph')]
 
-    for idx, column in enumerate(varying_columns):
-        config = slider_config[column]
+    for column in varying_columns:
+        config = slider_config.get(column, {})
         html_output.append(html.Div([
             html.Label(f'{column.capitalize()}'),
             dcc.Slider(
-                id=f'slider-{column}',
-                min=config['min'],
-                max=config['max'],
-                marks=config['marks'],
-                value=config['min'],
-                className=f'slider-color-{idx+1}'
+                id=f'slider-{column}',  # Slider ID
+                min=config.get('min', 0),
+                max=config.get('max', 10),
+                marks=config.get('marks', {0: '0', 10: '10'}),
+                value=config.get('min', 0),
+                className=f'slider-color-{column}'
             ),
         ], style={'padding': '20px 0px'}))
 
-    app.layout = html.Div(html_output)
+    # DEBUG
+    print_layout_ids(app.layout)
+    app.layout = html.Div([html.H1('My App')])
+    # app.layout = html.Div(html_output)
 
     @app.callback(
         Output('output-graph', 'figure'),
         [Input(f'slider-{column}', 'value') for column in varying_columns]
     )
-    def update_graph(*params):
-        current_key = tuple(params)
-        current_output1, current_output2 = data[current_key]
-        fig = px.scatter(x=[current_output1], y=[current_output2], 
-                         labels={'x':'Output 1', 'y':'Output 2'})
-        fig.update_traces(marker=dict(size=15, color='black'))
+    def update_graph(sample_length, num_samples):
+        # Filter the DataFrame based on slider values
+        filtered_df = df[(df['sample_length'] == sample_length) & (df['num_samples'] == num_samples)]
 
-        offsets = generate_offsets(num_params)
+        fig = px.scatter(filtered_df, x='final_val_loss', y='final_val_accuracy',
+                         color='uid', labels={'x': 'Final Validation Loss', 'y': 'Final Validation Accuracy'})
+        fig.update_traces(marker=dict(size=15))
 
-        colors = list(generate_colors(len(params)))
-        for i, param in enumerate(params):
-            next_param = list(params)
-            if next_param[i] < 10:
-                next_param[i] += 5
-                next_key = tuple(next_param)
-                if next_key in data:
-                    ghost_output1, ghost_output2 = data[next_key]
-                    # Adding random jitter
-                    offset_x, offset_y = offsets[i % len(offsets)]
-                    display_output1 = ghost_output1 + offset_x
-                    display_output2 = ghost_output2 + offset_y
-
-                    # Add ghost point to the plot with hover info displaying original values
-                    label = f'Ghost Point for Param{i + 1}'
-                    fig.add_scatter(
-                        x=[display_output1],
-                        y=[display_output2],
-                        mode='markers',
-                        marker=dict(
-                            size=9,
-                            color=colors[i % len(colors)],
-                            opacity=0.4),
-                        name=label,
-                        hovertext=f'{label}: ({ghost_output1}, {ghost_output2})',
-                        hoverinfo='text')
-
-                    # Add lines to ghost points for visibility
-                    fig.add_shape(type='line',
-                                  x0=current_output1+offset_x, y0=current_output2+offset_y,
-                                  x1=display_output1, y1=display_output2,
-                                  line=dict(color=colors[i % len(colors)], width=2, dash='dot'))
-
-
-        min_x = df['training_duration'].min()
-        max_x = df['training_duration'].max()
-        min_y = df['final_val_loss'].min()
-        max_y = df['final_val_loss'].max()
-
-        margin = 5
-        fig.update_layout(
-            xaxis_range=[min_x - margin, max_x + margin],
-            yaxis_range=[min_y - margin, max_y + margin])
         return fig
+
     return app
+
+
 
 
 sample_data = [{'uid': 'exp_1_20231210_220748',
