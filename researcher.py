@@ -15,6 +15,8 @@ from ciphers import _get_cipher_names
 import signal
 import time
 
+# TODO duplication checks are very slow.
+
 # Global flag and queue for communication
 should_continue = True
 
@@ -68,7 +70,7 @@ def plot_confusion_matrices(file_path='data/completed_experiments.yaml'):
 
                 # Add experiment ID and hyperparameters as title
                 title = f"Experiment: {exp['experiment_id']}"
-                title += " - Epoch {epoch}/{len(conf_matrices)}\n"
+                title += f" - Epoch {epoch}/{len(conf_matrices)}\n"
                 title += ', '.join([f"{key}: {value}" for key, value in hyperparams.items()])
                 plt.title(title)
                 
@@ -526,8 +528,6 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.yam
     if testing:
         return
 
-    existing_pending_experiments.extend(new_experiments)
-
     if new_experiments:
         with open(pending_file, 'r') as file:
             existing_pending_experiments = yaml.safe_load(file) or []
@@ -548,7 +548,8 @@ def main():
     # add default experiments to the pending_experiments file
 
     global should_continue
-
+    build_cm_gifs = False
+    
     signal.signal(signal.SIGINT, signal_handler)
 
     # WARNING DO NOT RUN, this would be 12960 experiments and might break storage
@@ -608,8 +609,13 @@ def main():
         notifications.send_discord_notification(
             "Pending experiments batch complete")
 
+    if not should_continue:
+        print("Skipping building confusion matrix .gif files...")
+    elif build_cm_gifs:
         # Plot confusion matrices for the new experiments
         plot_confusion_matrices()
+
+    print("Cleaning up files")
     clean_up_files(test_mode=False)
     # reformat_completed_experiments('data/completed_experiments.yaml')
 

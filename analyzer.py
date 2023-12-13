@@ -9,7 +9,7 @@ import random
 
 
 # issues transitioning to real data, results in "Error loading graph"
-
+# DEPRECATED NOT USED, use visualization.py
 
 def generate_colors(num_colors, saturation=40, lightness=40):
     """Generate 'num_colors' distinct pastel colors in HSL format."""
@@ -182,6 +182,26 @@ sample_data = [{'uid': 'exp_1_20231210_220748',
     'val_loss':[2.095775161470686, 2.0921216351645335, 2.0317570311682567]
     }
 ]
+
+def transform_data(raw_data):
+    transformed_data = {}
+    for experiment in raw_data:
+        hyperparams = (
+            experiment['hyperparams']['batch_size'],
+            experiment['hyperparams']['dropout_rate'],
+            experiment['hyperparams']['embedding_dim'],
+            experiment['hyperparams']['epochs'],
+            experiment['hyperparams']['hidden_dim'],
+            experiment['hyperparams']['learning_rate'],
+            experiment['hyperparams']['num_layers']
+        )
+        # Selecting training time and final loss as the metrics
+        training_time = experiment['metrics']['training_duration']
+        final_loss = experiment['metrics']['val_loss'][-1]  # assuming you want the final validation loss
+
+        transformed_data[hyperparams] = (training_time, final_loss)
+    return transformed_data
+
 
 def flatten_data(experiments):
     flattened_data = []
