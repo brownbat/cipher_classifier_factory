@@ -16,6 +16,7 @@ import signal
 import time
 
 # TODO duplication checks are very slow.
+# look at speed throughout
 
 # Global flag and queue for communication
 should_continue = True

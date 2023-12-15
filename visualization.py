@@ -9,115 +9,198 @@ import random
 import yaml
 
 
-# TODO: add shapes for lines (compare with working version with tuples)
+# TODO: rational graph size and marks
+# deal with slowness for large files
+# click handle so ghost points adjust settings
+# adjust canvas/frame/graph x/y so it is scaled tightly enough you can see differences
+# why does the L124 print statement fire twice
+# maybegreedily load nearby points only?
+'''
+it is slow to process. a lot of those rows are taken up by storing the confusion
+matrix for each experiment. i need to (1) confirm i need all the elements of the
+data structure, maybe i don't need a CM for every experiment, (2) consider
+different data storage formats for fast retrieval, (3) dynamically load
+information just before i need it, so the current data and ghost points are
+loaded, but when a ghost point is selected then we can dig for the new entries
+we need for that one, (4) possibly rearrange the data structure so that it's
+easier to locate the necessary entries for ghost points, by organizing it in a
+tree structure or something.
+'''
+# use a database?
+# maybe strip experiments file to only those critical values necessary?
+# why isn't learning rate dynamically captured as a parameter
 
-sample_data = [{'uid': 'exp_1_20231210_220748',
-    'ciphers': [
-        'english',
-        'caesar',
-        'vigenere',
-        'beaufort',
-        'autokey',
-        'random_noise',
-        'playfair',
-        'columnar_transposition'],
-    'num_samples': 1000,
-    'sample_length': 200,
-    'batch_size': 32,
-    'dropout_rate': 0.015,
-    'embedding_dim': 32,
-    'epochs': 3,
-    'hidden_dim': 64,
-    'learning_rate': 0.002,
-    'num_layers': 10,
-    'training_duration': 1.4175951480865479,
-    'val_accuracy': [0.105, 0.09, 0.14],
-    'val_loss': [2.0956461088997975, 2.0918024608067105, 2.070784432547433]
-    },
-    {
-    'uid': 'exp_2_20231210_220751',
-    'ciphers': [
-        'english',
-        'caesar',
-        'vigenere',
-        'beaufort',
-        'autokey',
-        'random_noise',
-        'playfair',
-        'columnar_transposition'],
-    'num_samples': 1000,
-    'sample_length': 400,
-    'batch_size': 32,
-    'dropout_rate': 0.015,
-    'embedding_dim': 32,
-    'epochs': 3,
-    'hidden_dim': 64,
-    'learning_rate': 0.002,
-    'num_layers': 10,
-    'training_duration': 2.7952144145965576,
-    'val_accuracy':[0.07, 0.07, 0.075],
-    'val_loss':[2.095775161470686, 2.0921216351645335, 2.0317570311682567]
-    },
+# allow user to designate which metrics are sliders and which are x/y and which are simply ignored
+# display in a text box somewhere those other metrics
 
-    {'uid': 'exp_1_20231210_220748',
-    'ciphers': [
-        'english',
-        'caesar',
-        'vigenere',
-        'beaufort',
-        'autokey',
-        'random_noise',
-        'playfair',
-        'columnar_transposition'],
-    'num_samples': 2000,
-    'sample_length': 200,
-    'batch_size': 32,
-    'dropout_rate': 0.015,
-    'embedding_dim': 32,
-    'epochs': 3,
-    'hidden_dim': 64,
-    'learning_rate': 0.002,
-    'num_layers': 10,
-    'training_duration': 1.92,
-    'val_accuracy': [0.105, 0.09, 0.24],
-    'val_loss': [2.0956461088997975, 2.0918024608067105, 2.03]
-    },
-    {
-    'uid': 'exp_2_20231210_220751',
-    'ciphers': [
-        'english',
-        'caesar',
-        'vigenere',
-        'beaufort',
-        'autokey',
-        'random_noise',
-        'playfair',
-        'columnar_transposition'],
-    'num_samples': 2000,
-    'sample_length': 400,
-    'batch_size': 32,
-    'dropout_rate': 0.015,
-    'embedding_dim': 32,
-    'epochs': 3,
-    'hidden_dim': 64,
-    'learning_rate': 0.002,
-    'num_layers': 10,
-    'training_duration': 3.2,
-    'val_accuracy':[0.07, 0.07, 0.085],
-    'val_loss':[2.095775161470686, 2.0921216351645335, 2.15]
-    }
-]
+sample_data = '''
+- data_params:
+    ciphers:
+    - english
+    - caesar
+    - vigenere
+    - beaufort
+    - autokey
+    - random_noise
+    - playfair
+    - columnar_transposition
+    num_samples: 1000
+    sample_length: 200
+  experiment_id: exp_5
+  hyperparams:
+    batch_size: 32
+    dropout_rate: 0.015
+    embedding_dim: 32
+    epochs: 3
+    hidden_dim: 64
+    learning_rate: 0.002
+    num_layers: 10
+  metrics:
+    train_loss:
+    - 2.086608033180237
+    - 2.0827114963531494
+    - 2.018235971927643
+    training_duration: 5.713783025741577
+    val_accuracy:
+    - 0.135
+    - 0.11
+    - 0.2225
+    val_loss:
+    - 2.0984616096203146
+    - 2.086530410326444
+    - 1.7952873615118174
+  model_filename: data/models/exp_5_20231210_220814.pt
+  training_time: '20231210_220814'
+  uid: exp_5_20231210_220814
+- data_params:
+    ciphers:
+    - english
+    - caesar
+    - vigenere
+    - beaufort
+    - autokey
+    - random_noise
+    - playfair
+    - columnar_transposition
+    num_samples: 1000
+    sample_length: 400
+  experiment_id: exp_5
+  hyperparams:
+    batch_size: 32
+    dropout_rate: 0.015
+    embedding_dim: 32
+    epochs: 3
+    hidden_dim: 64
+    learning_rate: 0.002
+    num_layers: 10
+  metrics:
+    train_loss:
+    - 2.086608033180237
+    - 2.0827114963531494
+    - 2.018235971927643
+    training_duration: 7.713783025741577
+    val_accuracy:
+    - 0.135
+    - 0.11
+    - 0.28
+    val_loss:
+    - 2.0984616096203146
+    - 2.086530410326444
+    - 1.6
+  model_filename: data/models/exp_5_20231210_220814.pt
+  training_time: '20231210_220814'
+  uid: exp_5_20231210_220814
+- data_params:
+    ciphers:
+    - english
+    - caesar
+    - vigenere
+    - beaufort
+    - autokey
+    - random_noise
+    - playfair
+    - columnar_transposition
+    num_samples: 2000
+    sample_length: 200
+  experiment_id: exp_5
+  hyperparams:
+    batch_size: 32
+    dropout_rate: 0.015
+    embedding_dim: 32
+    epochs: 3
+    hidden_dim: 64
+    learning_rate: 0.002
+    num_layers: 10
+  metrics:
+    train_loss:
+    - 2.086608033180237
+    - 2.0827114963531494
+    - 2.018235971927643
+    training_duration: 8.713783025741577
+    val_accuracy:
+    - 0.135
+    - 0.11
+    - 0.29
+    val_loss:
+    - 2.0984616096203146
+    - 2.086530410326444
+    - 1.3
+  model_filename: data/models/exp_5_20231210_220814.pt
+  training_time: '20231210_220814'
+  uid: exp_5_20231210_220814
+- data_params:
+    ciphers:
+    - english
+    - caesar
+    - vigenere
+    - beaufort
+    - autokey
+    - random_noise
+    - playfair
+    - columnar_transposition
+    num_samples: 2000
+    sample_length: 400
+  experiment_id: exp_5
+  hyperparams:
+    batch_size: 32
+    dropout_rate: 0.015
+    embedding_dim: 32
+    epochs: 3
+    hidden_dim: 64
+    learning_rate: 0.002
+    num_layers: 10
+  metrics:
+    train_loss:
+    - 2.086608033180237
+    - 2.0827114963531494
+    - 2.018235971927643
+    training_duration: 10.7
+    val_accuracy:
+    - 0.135
+    - 0.11
+    - 0.4225
+    val_loss:
+    - 2.0984616096203146
+    - 2.086530410326444
+    - 1.1
+  model_filename: data/models/exp_5_20231210_220814.pt
+  training_time: '20231210_220814'
+  uid: exp_5_20231210_220814
+'''
 
-def load_subset_of_data(file_path='data/completed_experiments.yaml', max_experiments=100):
+sample_data = yaml.safe_load(sample_data)
+# print(sample_data[0]['data_params'])
+# exit()
+
+def load_subset_of_data(file_path='data/completed_experiments-subset.yaml', max_experiments=100):
     with open(file_path, 'r') as file:
         data = yaml.safe_load(file)
         # Assuming data is a list of experiments
         return data[:max_experiments]
 
 # Load a subset of the data
-sample_data = load_subset_of_data(max_experiments=8)
-print(sample_data)
-input() 
+# sample_data = load_subset_of_data(max_experiments=8)
+# print(sample_data)
 
 
 def generate_colors(num_colors, saturation=40, lightness=40):
@@ -159,11 +242,12 @@ def write_css_to_file(css_content, filename='assets/custom_styles.css'):
 def setup_dash_app(data=sample_data):
     transformed_data = transform_data(data)
     transformed_data_dict = {params: metrics for params, metrics in transformed_data}
-
     param_value_map = build_param_value_map(transformed_data)
+    num_metrics = len(transformed_data[0][1]) if transformed_data else 0
+    column_names = [f'output{i + 1}' for i in range(num_metrics)]
     
     # Create DataFrame for graph scaling
-    df = pd.DataFrame([metrics for _, metrics in transformed_data], columns=['output1', 'output2', 'additional_metric'])
+    df = pd.DataFrame([metrics for _, metrics in transformed_data], columns=column_names)
 
     # Identifying variable parameters
     variable_params = {k: v for k, v in param_value_map.items() if len(v) > 1}
@@ -213,7 +297,7 @@ def setup_dash_app(data=sample_data):
         if current_key in transformed_data_dict:
             current_output1, current_output2, _ = transformed_data_dict[current_key]
             fig = px.scatter(x=[current_output1], y=[current_output2], 
-                             labels={'x':'Output 1', 'y':'Output 2'})
+                             labels={'x':'Training Time', 'y':'Accuracy'})
             fig.update_traces(marker=dict(size=15, color='black'))
 
             # Graph scaling based on DataFrame
@@ -272,31 +356,6 @@ def setup_dash_app(data=sample_data):
 """('num_ciphers', 'num_samples', 'sample_length', 'batch_size', 'dropout_rate',
 'embedding_dim', 'epochs', 'hidden_dim', 'learning_rate', 'num_layers'):
     ('training_duration', 'val_accuracy', 'val_loss')"""
-def transform_data_old(data=sample_data):
-    transformed_tuples = []
-    for experiment in data:
-        params = (
-            len(experiment['ciphers']),
-            experiment['num_samples'],
-            experiment['sample_length'],
-            experiment['batch_size'],
-            experiment['dropout_rate'],
-            experiment['embedding_dim'],
-            experiment['epochs'],
-            experiment['hidden_dim'],
-            experiment['learning_rate'],
-            experiment['num_layers']
-        )
-        training_duration = experiment['training_duration']
-        final_accuracy = experiment['val_accuracy'][-1]  # using the final validation accuracy
-        final_loss = experiment['val_loss'][-1]  # using the final validation loss
-
-        experiment_tuple = (params, (training_duration, final_accuracy, final_loss))
-        transformed_tuples.append(experiment_tuple)
-
-    return transformed_tuples
-
-
 def transform_data(data):
     transformed_tuples = []
     for experiment in data:
@@ -325,10 +384,55 @@ def transform_data(data):
     return transformed_tuples
 
 
+def transform_data_dynamic(data):
+    transformed_tuples = []
+    for experiment in data:
+        params = []
+        # Dynamically extracting parameters from 'data_params' and 'hyperparams'
+        for param_category in ['data_params', 'hyperparams']:
+            if param_category in experiment:
+                for key, value in experiment[param_category].items():
+                    if isinstance(value, list):
+                        # For lists (like ciphers), store their length
+                        params.append(len(value))
+                    else:
+                        # For other types, store the value directly
+                        params.append(value)
+
+        # Extracting metrics
+        metrics = []
+        if 'metrics' in experiment:
+            for key in ['training_duration', 'val_accuracy', 'val_loss']:
+                if key in experiment['metrics']:
+                    value = experiment['metrics'][key]
+                    # For 'val_accuracy' and 'val_loss', use the last value
+                    if key in ['val_accuracy', 'val_loss'] and isinstance(value, list):
+                        metrics.append(value[-1])
+                    else:
+                        metrics.append(value)
+
+        experiment_tuple = (tuple(params), tuple(metrics))
+        transformed_tuples.append(experiment_tuple)
+
+    return transformed_tuples
+
+
 def run_app(data=sample_data):
     num_params = len(list(data[0].keys()))
     app = setup_dash_app(data)
     app.run_server(debug=True)
+
+
+def build_param_value_map_dynamic(transformed_data):
+    param_value_map = {}
+    for params, _ in transformed_data:
+        for idx, param in enumerate(params):
+            # Assuming each parameter can be uniquely identified by its index
+            param_name = f"param_{idx}"
+            if param_name not in param_value_map:
+                param_value_map[param_name] = set()
+            param_value_map[param_name].add(param)
+    return param_value_map
 
 
 def build_param_value_map(transformed_data):
@@ -354,6 +458,4 @@ def build_param_value_map(transformed_data):
 
 
 if __name__ == '__main__':
-    transformed_data = transform_data(sample_data)
-    param_value_map = build_param_value_map(transformed_data)
-    run_app()
+    run_app(sample_data)
