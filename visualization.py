@@ -366,7 +366,7 @@ def setup_dash_app(data=sample_data):
                         display_output2 = ghost_output2 + offset_y'''
 
                         # Add ghost point to the plot with hover info displaying original values
-                        label = f'Ghost Point for Param{idx + 1}'
+                        label = f'Ghost Point for {param_name} (Param{idx + 1})'
                         fig.add_scatter(
                             x=[ghost_output1],  # replace with offset values if necessary
                             y=[ghost_output2],
