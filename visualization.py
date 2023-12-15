@@ -5,9 +5,7 @@ from dash.dependencies import Input, Output
 import plotly.express as px
 import pandas as pd
 import os
-import random
-import yaml
-
+from researcher import safe_json_load
 
 # TODO: rational graph size and marks
 # deal with slowness for large files
@@ -188,13 +186,13 @@ sample_data = '''
   uid: exp_5_20231210_220814
 '''
 
-sample_data = yaml.safe_load(sample_data)
+sample_data = safe_json_load('data/completed_experiments.json')
 # print(sample_data[0]['data_params'])
 # exit()
 
-def load_subset_of_data(file_path='data/completed_experiments-subset.yaml', max_experiments=100):
+def load_subset_of_data(file_path='data/completed_experiments-subset.json', max_experiments=100):
     with open(file_path, 'r') as file:
-        data = yaml.safe_load(file)
+        data = safe_json_load(file)
         # Assuming data is a list of experiments
         return data[:max_experiments]
 
@@ -223,13 +221,26 @@ def generate_slider_css(num_sliders, colors):
     return css_rules
 
 
-def generate_offsets(num_params, base_offset=0.04):
+def generate_offsets(variable_params, offset_coefficient=0.1):
+    print(variable_params)
     """Generate a list of (x, y) offset tuples for each parameter."""
-    first_offset = (num_params // 2) * base_offset
+    # Assuming 'output1' and 'output2' are the metrics for x and y axes, respectively
+    output1_range = max(variable_params['output1']) - min(variable_params['output1'])
+    output2_range = max(variable_params['output2']) - min(variable_params['output2'])
+
+    print("output1_range")
+    print(output1_range)
+    print("output2_range")
+    print(output2_range)
+
+    base_offset_x = offset_coefficient * output1_range
+    base_offset_y = offset_coefficient * output2_range
+
     offsets = []
-    for i in range(num_params):
-        # currently moves northeast, can adjust
-        offsets.append(((base_offset * i) - first_offset, (base_offset * i) - first_offset))
+    for i in range(len(variable_params)):
+        offset_x = (base_offset_x * i) - ((len(variable_params) // 2) * base_offset_x)
+        offset_y = (base_offset_y * i) - ((len(variable_params) // 2) * base_offset_y)
+        offsets.append((offset_x, offset_y))
     return offsets
 
 
@@ -257,8 +268,27 @@ def setup_dash_app(data=sample_data):
     slider_css = generate_slider_css(num_params, colors)
     write_css_to_file(slider_css)
 
+    # Extracting metric values for graph scaling
+    metrics = [values for _, values in transformed_data]
+    accuracy_values = [m[1] for m in metrics]  # Assuming accuracy is the second metric
+    training_duration_values = [m[0] for m in metrics]  # Assuming training duration is the first metric
+
+    min_accuracy, max_accuracy = min(accuracy_values), max(accuracy_values)
+    min_duration, max_duration = min(training_duration_values), max(training_duration_values)
+
+    # Adding a buffer for better visualization
+    accuracy_buffer = (max_accuracy - min_accuracy) * 0.1
+    duration_buffer = (max_duration - min_duration) * 0.1
+
+    graph_layout = {
+        'xaxis': {'range': [min_duration - duration_buffer, max_duration + duration_buffer]},
+        'yaxis': {'range': [min_accuracy - accuracy_buffer, max_accuracy + accuracy_buffer]},
+        # Include other layout properties as needed
+    }
+
     app = dash.Dash(__name__)
-    html_output = [dcc.Graph(id='output-graph')]
+    html_output = []
+    html_output.append(dcc.Graph(id='output-graph', figure={'layout': graph_layout}))
 
     for idx, (param_name, values) in enumerate(variable_params.items()):
         min_val, max_val = min(values), max(values)
@@ -303,18 +333,21 @@ def setup_dash_app(data=sample_data):
             # Graph scaling based on DataFrame
             min_x, max_x = df['output1'].min(), df['output1'].max()
             min_y, max_y = df['output2'].min(), df['output2'].max()
-            margin = 5
+            margin_x = 0.1 * (max_x - min_x)
+            margin_y = 0.1 * (max_y - min_y)
             fig.update_layout(
-                xaxis_range=[min_x - margin, max_x + margin],
-                yaxis_range=[min_y - margin, max_y + margin])
+                xaxis_range=[min_x - margin_x, max_x + margin_x],
+                yaxis_range=[min_y - margin_y, max_y + margin_y])
 
             # Adding ghost points
 
             # Iterate over variable parameters to identify the next parameters/keys
             for idx, (param_name, values) in enumerate(variable_params.items()):
+                sorted_values = sorted(values)
+                
                 correct_idx = list(param_value_map.keys()).index(param_name)
                 current_value = current_key[correct_idx]
-                next_values = [v for v in values if v > current_value]
+                next_values = [v for v in sorted_values if v > current_value]
                 if next_values:
                     next_value = next_values[0]
 
@@ -326,16 +359,17 @@ def setup_dash_app(data=sample_data):
                     # Check if the next_key exists in transformed_data_dict
                     if next_key in transformed_data_dict:
                         ghost_output1, ghost_output2, _ = transformed_data_dict[next_key]
-                        offsets = generate_offsets(len(variable_params))
+                        output_values = {'output1':df['output1'], 'output2':df['output2']}
+                        '''offsets = generate_offsets(output_values)
                         offset_x, offset_y = offsets[idx % len(offsets)]
                         display_output1 = ghost_output1 + offset_x
-                        display_output2 = ghost_output2 + offset_y
+                        display_output2 = ghost_output2 + offset_y'''
 
                         # Add ghost point to the plot with hover info displaying original values
                         label = f'Ghost Point for Param{idx + 1}'
                         fig.add_scatter(
-                            x=[display_output1],
-                            y=[display_output2],
+                            x=[ghost_output1],  # replace with offset values if necessary
+                            y=[ghost_output2],
                             mode='markers',
                             marker=dict(
                                 size=9,
@@ -346,8 +380,8 @@ def setup_dash_app(data=sample_data):
                             hoverinfo='text')
                         # Add lines to ghost points for visibility
                         fig.add_shape(type='line',
-                                      x0=current_output1+offset_x, y0=current_output2+offset_y,
-                                      x1=display_output1, y1=display_output2,
+                                      x0=current_output1, y0=current_output2,  # add offsets here as appropriate
+                                      x1=ghost_output1, y1=ghost_output2,
                                       line=dict(color=colors[idx % len(colors)], width=2, dash='dot'))
             return fig
     return app

@@ -4,7 +4,6 @@ import json
 import notifications
 import os
 import torch
-import yaml
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -22,18 +21,28 @@ import time
 should_continue = True
 
 
+def safe_json_load(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            return json.load(file)
+    except json.JSONDecodeError:
+        # Handle empty or invalid JSON file
+        return []
+
+
 def signal_handler(sig, frame):
     global should_continue
     print('Ctrl+C pressed, preparing to exit...')
     should_continue = False
 
 
-def plot_confusion_matrices(file_path='data/completed_experiments.yaml'):
+def plot_confusion_matrices(file_path='data/completed_experiments.json'):
     print('Plotting...')
-    with open(file_path, 'r') as file:
-        experiments = yaml.safe_load(file) or []
+    experiments = safe_json_load(file_path)
 
     for exp in experiments:
+        # TODO: This is too slow for large datasets. consider instead reworking
+        # to call with a specific UID in mind. cm_to_gif(uid, filename) or sim
         # Check if metrics and training_time are available
         if ('metrics' in exp and 'training_time' in exp
                 and 'conf_matrix' in exp['metrics']):
@@ -106,14 +115,14 @@ def plot_confusion_matrices(file_path='data/completed_experiments.yaml'):
     # Write the updated experiments data back to the file
     with open(file_path, 'w') as file:
         experiments = convert_ndarray_to_list(experiments)
-        yaml.dump(experiments, file)
+        json.dump(experiments, file, indent=4)
 
     print("Updated experiment data saved to file.")
 
 
-def query_experiments_metrics(file_path='data/experiments.yaml'):
-    with open(file_path, 'r') as file:
-        experiments = yaml.safe_load(file) or []
+def query_experiments_metrics(file_path='data/experiments.json'):
+    # TODO ensure compatible with current data model
+    experiments = safe_json_load(file_path)
 
     outstr = ""
     for exp in experiments:
@@ -151,6 +160,7 @@ def get_experiment_details(exp):
     '''
     Returns experiment details as a formatted string.
     '''
+    # TODO ensure compatible with current data model
     details = []
     details.append("Experiment details")
 
@@ -179,13 +189,14 @@ def get_experiment_details(exp):
 
 def run_experiments(pending_file, completed_file):
     '''
-    Runs experiments from pending_experiments.yaml and writes results to
-    completed_experiments.yaml
+    Runs experiments from pending_experiments.json and writes results to
+    completed_experiments.json
     '''
+    # TODO align with data structure
     trained_experiments = []  # List to store IDs of experiments that were trained
 
     with open(pending_file, 'r') as file:
-        experiments = yaml.safe_load(file) or []
+        experiments = safe_json_load(pending_file)
 
     for exp in experiments.copy():  # Iterate over a copy of the list
         data_params = exp.get('data_params', {})
@@ -227,7 +238,7 @@ def run_experiments(pending_file, completed_file):
 
 def run_experiment(exp):
     '''
-    Runs one experiment and writes results to completed_experiments.yaml
+    Runs one experiment and writes results to completed_experiments.json
     '''
     data_params = exp.get('data_params', {})
     hyperparams = exp.get('hyperparams', {})
@@ -256,12 +267,11 @@ def run_experiment(exp):
 
 def read_experiments(file_path, exp_uid=[]):
     '''
-    Fetches experiment results from completed_experiments.yaml and returns their details.
+    Fetches experiment results from completed_experiments.json and returns their details.
     '''
     experiment_details = []
 
-    with open(file_path, 'r') as file:
-        experiments = yaml.safe_load(file) or []
+    experiments = safe_json_load(file_path)
 
     for exp in experiments:
         # report on matching experiments, or ALL if exp_uid is []
@@ -282,7 +292,7 @@ def rewrite_experiment_file(file_path, experiments):
     experiments_converted = convert_ndarray_to_list(experiments)
 
     with open(file_path, 'w') as file:
-        yaml.dump(experiments_converted, file)
+        json.dump(experiments_converted, file)
 
 
 def append_to_experiment_file(file_path, experiment):
@@ -290,24 +300,22 @@ def append_to_experiment_file(file_path, experiment):
     experiment_converted = convert_ndarray_to_list(experiment)
 
     # Read existing data from the file
-    with open(file_path, 'r') as file:
-        existing_data = yaml.safe_load(file) or []
+    existing_data = safe_json_load(file_path)
 
     # Append the new experiment to the existing data
     existing_data.append(experiment_converted)
 
     # Write the updated data back to the file
     with open(file_path, 'w') as file:
-        yaml.dump(existing_data, file)
+        json.dump(existing_data, file)
 
 
 def clean_up_files(
         model_directory='data/models',
         gif_directory='data/cm',
-        experiments_file='data/completed_experiments.yaml',
+        experiments_file='data/completed_experiments.json',
         test_mode=True):
-    with open(experiments_file, 'r') as file:
-        experiments = yaml.safe_load(file) or []
+    experiments = safe_json_load(experiments_file)
 
     model_filenames = {
         os.path.basename(exp.get('model_filename', '')) for exp in experiments}
@@ -344,14 +352,13 @@ def clean_up_files(
     return files_to_delete
 
 
-def get_pending_experiments(pending_file='data/pending_experiments.yaml'):
+def get_pending_experiments(pending_file='data/pending_experiments.json'):
     with open(pending_file, 'r') as file:
-        return yaml.safe_load(file) or []
+        return safe_json_load(pending_file)
 
 
 def reformat_completed_experiments(file_path):
-    with open(file_path, 'r') as file:
-        experiments = yaml.safe_load(file) or []
+    experiments = safe_json_load(file_path)
 
     reformatted_experiments = []
 
@@ -361,7 +368,7 @@ def reformat_completed_experiments(file_path):
         reformatted_experiments.append(reformatted_experiment)
 
     with open(file_path, 'w') as file:
-        yaml.dump(reformatted_experiments, file)
+        json.dump(reformatted_experiments, file)
 
 
 def experiment_key(experiment):
@@ -379,26 +386,23 @@ def experiment_key(experiment):
 def experiment_exists(key, pending_file, completed_file):
     # Check in pending experiments
     with open(pending_file, 'r') as file:
-        pending_experiments = yaml.safe_load(file) or []
+        pending_experiments = safe_json_load(pending_file)
         for exp in pending_experiments:
             if experiment_key(exp) == key:
                 return "PENDING"
-    
     # Check in completed experiments
     with open(completed_file, 'r') as file:
-        completed_experiments = yaml.safe_load(file) or []
+        completed_experiments = safe_json_load(completed_file)
         for exp in completed_experiments:
             if experiment_key(exp) == key:
                 return "COMPLETED"
-   
     return False
 
 
-def get_completed_experiment_keys(file_path="data/completed_experiments.yaml"):
+def get_completed_experiment_keys(file_path="data/completed_experiments.json"):
     completed_experiment_keys = set()
 
-    with open(file_path, 'r') as file:
-        experiments = yaml.safe_load(file) or []
+    experiments = safe_json_load(file_path)
 
     for exp in experiments:
         key = experiment_key(exp)
@@ -407,7 +411,7 @@ def get_completed_experiment_keys(file_path="data/completed_experiments.yaml"):
     return completed_experiment_keys
 
 
-def reset_pending_experiments(file_path="data/pending_experiments.yaml"):
+def reset_pending_experiments(file_path="data/pending_experiments.json"):
     default_experiment = {
         'data_params': {
             'ciphers': ['english', 'vigenere', 'columnar_transposition'],
@@ -427,24 +431,23 @@ def reset_pending_experiments(file_path="data/pending_experiments.yaml"):
     }
 
     with open(file_path, 'w') as file:
-        yaml.dump([default_experiment], file)
+        json.dump([default_experiment], file)
 
 
 def load_experiment_keys(file_path):
-    with open(file_path, 'r') as file:
-        experiments = yaml.safe_load(file) or []
-        return {experiment_key(exp) for exp in experiments}
+    experiments = safe_json_load(file_path)
+    return {experiment_key(exp) for exp in experiments}
 
 
-def generate_experiments(settings={}, pending_file='data/pending_experiments.yaml', completed_file='data/completed_experiments.yaml', rerun=False):
+def generate_experiments(settings={}, pending_file='data/pending_experiments.json', completed_file='data/completed_experiments.json'):
     # TODO - consider hashing the experiment_key and using it in a hash table to
     # speed lookups for experiment collisions
     # TODO - responsibly overwrite an old experiment if rerun=True 
     print("Generating new experiments to run based off of settings:")
     print(settings)
     print()
+
     default_params = {
-        'ciphers': _get_cipher_names(),  # Default ciphers
         'num_samples': 1000,
         'sample_length': 200,
         'epochs': 3,
@@ -455,21 +458,16 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.yam
         'dropout_rate': 0.015,
         'learning_rate': 0.002
     }
-
-    # Update default_params with provided settings
-    for key, value in settings.items():
-        default_params[key] = value
+    default_params.update(settings)
+    settings.update(default_params)
+    ciphers = settings.pop('ciphers')
+    if not isinstance(ciphers[0], list):
+        ciphers = [ciphers]
 
     # Separate list and non-list parameters
-    ciphers = default_params.pop('ciphers', _get_cipher_names())
-    list_params = {k: v for k, v in default_params.items() if isinstance(v, (list, tuple))}
-    non_list_params = {k: v for k, v in default_params.items() if not isinstance(v, (list, tuple))}
+    list_params = {k: v for k, v in settings.items() if isinstance(v, (list, tuple))}
+    non_list_params = {k: v for k, v in settings.items() if not isinstance(v, (list, tuple))}
 
-    # Handle 'ciphers' based on its type
-    if isinstance(ciphers[0], (list, tuple)):
-        list_params['ciphers'] = ciphers
-    else:
-        non_list_params['ciphers'] = ciphers
     if list_params:
         # Compute all combinations of list parameters
         keys, values = zip(*list_params.items())
@@ -479,63 +477,41 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.yam
         combinations = [{}]
 
     experiment_id_counter = 1
-    experiments = []
-    for combination in combinations:
-        # Extract and correctly structure data_params and hyperparams
-        data_params = {
-            'ciphers': combination.pop('ciphers', _get_cipher_names()),
-            'num_samples': combination.pop('num_samples', 1000),
-            'sample_length': combination.pop('sample_length', 200)
-        }
-        hyperparams = {
-            'epochs': combination.get('epochs', 3),
-            'num_layers': combination.get('num_layers', 10),
-            'batch_size': combination.get('batch_size', 32),
-            'embedding_dim': combination.get('embedding_dim', 32),
-            'hidden_dim': combination.get('hidden_dim', 64),
-            'dropout_rate': combination.get('dropout_rate', 0.015),
-            'learning_rate': combination.get('learning_rate', 0.002)
-        }
+    new_experiments = []
 
-        experiment = {
-            'data_params': data_params,
-            'hyperparams': hyperparams,
-            'experiment_id': f'exp_{experiment_id_counter}'
-        }
-        experiments.append(experiment)
-        experiment_id_counter += 1
+    for cipher_set in ciphers:
+        for combination in combinations:
+            experiment_params = {**non_list_params, **combination}
+            experiment_params['ciphers'] = list(cipher_set)
+            
+            experiment = {
+                'data_params': {
+                    'ciphers': experiment_params.pop('ciphers'),
+                    'num_samples': experiment_params.pop('num_samples'),
+                    'sample_length': experiment_params.pop('sample_length')
+                },
+                'hyperparams': experiment_params,
+                'experiment_id': f'exp_{experiment_id_counter}'
+            }
+            new_experiments.append(experiment)
+            experiment_id_counter += 1
 
 
-    # Append to existing experiments if they don't already exist
+    # Check for duplicates
     pending_keys = load_experiment_keys(pending_file)
     completed_keys = load_experiment_keys(completed_file)
-    new_experiments = []
-    print(f"Considering {len(experiments)} experiments for duplicates.")
-    for exp in experiments:
-        key = experiment_key(exp)
-        if key not in pending_keys:
-            if rerun or key not in completed_keys:
-                new_experiments.append(exp)
+
+    experiments_to_add = [exp for exp in new_experiments if experiment_key(exp) not in pending_keys and experiment_key(exp) not in completed_keys]
     
-    testing = False
-    if testing:
-        for e in experiments:
-            print(e)
-            
-    print(f"There are {len(pending_keys)} pending and {len(completed_keys)} completed experiments.")
-    print(f"These new parameters generate {len(experiments)} experiments.")
-    print(f"Of these, {len(new_experiments)} are new.")
+    print(f"Considering {len(new_experiments)} experiments for duplicates.")
+    print(f"{len(experiments_to_add)} new experiments to add.")
 
-    if testing:
-        return
-
-    if new_experiments:
-        with open(pending_file, 'r') as file:
-            existing_pending_experiments = yaml.safe_load(file) or []
-        existing_pending_experiments.extend(new_experiments)
-
+    # Add new experiments to pending file
+    if experiments_to_add:
+        existing_pending_experiments = safe_json_load(pending_file)
+        existing_pending_experiments.extend(experiments_to_add)
         with open(pending_file, 'w') as file:
-            yaml.dump(existing_pending_experiments, file)
+            json.dump(existing_pending_experiments, file)
     else:
         print("No new experiments to add.")
 
@@ -553,17 +529,17 @@ def main():
     
     signal.signal(signal.SIGINT, signal_handler)
 
-    # WARNING DO NOT RUN, this would be 12960 experiments and might break storage
     params = {
+            'ciphers': ['english', 'vigenere', 'caesar'],
             'num_samples': [1000,2000,3000],
             'sample_length': [200,400,600],
             'epochs': [10, 20, 30],
-            'num_layers': [5, 10, 15, 20],
-            'batch_size': [32, 64],
+            'num_layers': 10,
+            'batch_size': 64,
             'embedding_dim': 32,
-            'hidden_dim': [32, 64, 128, 256],
-            'dropout_rate': [0.01, 0.015, 0.02],
-            'learning_rate': [0.001, 0.002, 0.003],
+            'hidden_dim': 64,
+            'dropout_rate': 0.015,
+            'learning_rate': 0.002
         }
 
 
@@ -596,12 +572,12 @@ def main():
 
         trained_experiments.append(updated_exp['uid'])
         append_to_experiment_file(
-            'data/completed_experiments.yaml', updated_exp)
+            'data/completed_experiments.json', updated_exp)
         pending_experiments.remove(exp)
         # Update the pending experiments file with the remaining experiments
         # need to get experiments from somewhere
         rewrite_experiment_file(
-            'data/pending_experiments.yaml', pending_experiments)
+            'data/pending_experiments.json', pending_experiments)
 
     if not trained_experiments:
         print("No new training occurred.")
@@ -614,11 +590,12 @@ def main():
         print("Skipping building confusion matrix .gif files...")
     elif build_cm_gifs:
         # Plot confusion matrices for the new experiments
-        plot_confusion_matrices()
+        # plot_confusion_matrices()
+        pass  # do not plot, it's too slow
 
     print("Cleaning up files")
     clean_up_files(test_mode=False)
-    # reformat_completed_experiments('data/completed_experiments.yaml')
+    # reformat_completed_experiments('data/completed_experiments.json')
 
 
 if __name__ == "__main__":

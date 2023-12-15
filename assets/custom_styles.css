@@ -2,6 +2,9 @@
         .slider-color-1 .rc-slider-track { background-color: hsl(0, 40%, 40%); }
         .slider-color-1 .rc-slider-handle { border-color: hsl(0, 40%, 40%); }
         
-        .slider-color-2 .rc-slider-track { background-color: hsl(180, 40%, 40%); }
-        .slider-color-2 .rc-slider-handle { border-color: hsl(180, 40%, 40%); }
+        .slider-color-2 .rc-slider-track { background-color: hsl(120, 40%, 40%); }
+        .slider-color-2 .rc-slider-handle { border-color: hsl(120, 40%, 40%); }
+        
+        .slider-color-3 .rc-slider-track { background-color: hsl(240, 40%, 40%); }
+        .slider-color-3 .rc-slider-handle { border-color: hsl(240, 40%, 40%); }
         
