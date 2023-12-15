@@ -22,3 +22,4 @@ Each entry of the form:
   The experiments will be run in turn, filling in metrics for later analysis.
 
   (WARNING: This yaml structure will be revised in a future version.)
+![demo](https://github.com/brownbat/cipher_classifier_factory/assets/26754/0f89f7a5-14b5-496e-ac74-6d21d8b2180d)
