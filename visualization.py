@@ -12,18 +12,8 @@ from researcher import safe_json_load
 # click handle so ghost points adjust settings
 # adjust canvas/frame/graph x/y so it is scaled tightly enough you can see differences
 # why does the L124 print statement fire twice
-# maybegreedily load nearby points only?
-'''
-it is slow to process. a lot of those rows are taken up by storing the confusion
-matrix for each experiment. i need to (1) confirm i need all the elements of the
-data structure, maybe i don't need a CM for every experiment, (2) consider
-different data storage formats for fast retrieval, (3) dynamically load
-information just before i need it, so the current data and ghost points are
-loaded, but when a ghost point is selected then we can dig for the new entries
-we need for that one, (4) possibly rearrange the data structure so that it's
-easier to locate the necessary entries for ghost points, by organizing it in a
-tree structure or something.
-'''
+# maybe greedily load nearby points only?
+
 # use a database?
 # maybe strip experiments file to only those critical values necessary?
 # why isn't learning rate dynamically captured as a parameter
@@ -31,175 +21,13 @@ tree structure or something.
 # allow user to designate which metrics are sliders and which are x/y and which are simply ignored
 # display in a text box somewhere those other metrics
 
-sample_data = '''
-- data_params:
-    ciphers:
-    - english
-    - caesar
-    - vigenere
-    - beaufort
-    - autokey
-    - random_noise
-    - playfair
-    - columnar_transposition
-    num_samples: 1000
-    sample_length: 200
-  experiment_id: exp_5
-  hyperparams:
-    batch_size: 32
-    dropout_rate: 0.015
-    embedding_dim: 32
-    epochs: 3
-    hidden_dim: 64
-    learning_rate: 0.002
-    num_layers: 10
-  metrics:
-    train_loss:
-    - 2.086608033180237
-    - 2.0827114963531494
-    - 2.018235971927643
-    training_duration: 5.713783025741577
-    val_accuracy:
-    - 0.135
-    - 0.11
-    - 0.2225
-    val_loss:
-    - 2.0984616096203146
-    - 2.086530410326444
-    - 1.7952873615118174
-  model_filename: data/models/exp_5_20231210_220814.pt
-  training_time: '20231210_220814'
-  uid: exp_5_20231210_220814
-- data_params:
-    ciphers:
-    - english
-    - caesar
-    - vigenere
-    - beaufort
-    - autokey
-    - random_noise
-    - playfair
-    - columnar_transposition
-    num_samples: 1000
-    sample_length: 400
-  experiment_id: exp_5
-  hyperparams:
-    batch_size: 32
-    dropout_rate: 0.015
-    embedding_dim: 32
-    epochs: 3
-    hidden_dim: 64
-    learning_rate: 0.002
-    num_layers: 10
-  metrics:
-    train_loss:
-    - 2.086608033180237
-    - 2.0827114963531494
-    - 2.018235971927643
-    training_duration: 7.713783025741577
-    val_accuracy:
-    - 0.135
-    - 0.11
-    - 0.28
-    val_loss:
-    - 2.0984616096203146
-    - 2.086530410326444
-    - 1.6
-  model_filename: data/models/exp_5_20231210_220814.pt
-  training_time: '20231210_220814'
-  uid: exp_5_20231210_220814
-- data_params:
-    ciphers:
-    - english
-    - caesar
-    - vigenere
-    - beaufort
-    - autokey
-    - random_noise
-    - playfair
-    - columnar_transposition
-    num_samples: 2000
-    sample_length: 200
-  experiment_id: exp_5
-  hyperparams:
-    batch_size: 32
-    dropout_rate: 0.015
-    embedding_dim: 32
-    epochs: 3
-    hidden_dim: 64
-    learning_rate: 0.002
-    num_layers: 10
-  metrics:
-    train_loss:
-    - 2.086608033180237
-    - 2.0827114963531494
-    - 2.018235971927643
-    training_duration: 8.713783025741577
-    val_accuracy:
-    - 0.135
-    - 0.11
-    - 0.29
-    val_loss:
-    - 2.0984616096203146
-    - 2.086530410326444
-    - 1.3
-  model_filename: data/models/exp_5_20231210_220814.pt
-  training_time: '20231210_220814'
-  uid: exp_5_20231210_220814
-- data_params:
-    ciphers:
-    - english
-    - caesar
-    - vigenere
-    - beaufort
-    - autokey
-    - random_noise
-    - playfair
-    - columnar_transposition
-    num_samples: 2000
-    sample_length: 400
-  experiment_id: exp_5
-  hyperparams:
-    batch_size: 32
-    dropout_rate: 0.015
-    embedding_dim: 32
-    epochs: 3
-    hidden_dim: 64
-    learning_rate: 0.002
-    num_layers: 10
-  metrics:
-    train_loss:
-    - 2.086608033180237
-    - 2.0827114963531494
-    - 2.018235971927643
-    training_duration: 10.7
-    val_accuracy:
-    - 0.135
-    - 0.11
-    - 0.4225
-    val_loss:
-    - 2.0984616096203146
-    - 2.086530410326444
-    - 1.1
-  model_filename: data/models/exp_5_20231210_220814.pt
-  training_time: '20231210_220814'
-  uid: exp_5_20231210_220814
-'''
-
 sample_data = safe_json_load('data/completed_experiments.json')
-# print(sample_data[0]['data_params'])
-# exit()
 
 def load_subset_of_data(file_path='data/completed_experiments-subset.json', max_experiments=100):
     with open(file_path, 'r') as file:
         data = safe_json_load(file)
         # Assuming data is a list of experiments
         return data[:max_experiments]
-
-# Load a subset of the data
-# sample_data = load_subset_of_data(max_experiments=8)
-# print(sample_data)
-
 
 def generate_colors(num_colors, saturation=40, lightness=40):
     """Generate 'num_colors' distinct pastel colors in HSL format and return them as a list."""
@@ -222,16 +50,10 @@ def generate_slider_css(num_sliders, colors):
 
 
 def generate_offsets(variable_params, offset_coefficient=0.1):
-    print(variable_params)
     """Generate a list of (x, y) offset tuples for each parameter."""
     # Assuming 'output1' and 'output2' are the metrics for x and y axes, respectively
     output1_range = max(variable_params['output1']) - min(variable_params['output1'])
     output2_range = max(variable_params['output2']) - min(variable_params['output2'])
-
-    print("output1_range")
-    print(output1_range)
-    print("output2_range")
-    print(output2_range)
 
     base_offset_x = offset_coefficient * output1_range
     base_offset_y = offset_coefficient * output2_range
@@ -292,7 +114,7 @@ def setup_dash_app(data=sample_data):
 
     for idx, (param_name, values) in enumerate(variable_params.items()):
         min_val, max_val = min(values), max(values)
-        marks = {int(val): str(val) for val in values}
+        marks = {float(val): str(val) for val in values}
 
         html_output.append(html.Div([
             html.Label(f'{param_name.capitalize()}'),
@@ -324,6 +146,7 @@ def setup_dash_app(data=sample_data):
         current_key = tuple(variable_values.get(param_name, constant_values_template[idx]) 
                             for idx, param_name in enumerate(param_value_map.keys()))
 
+        
         if current_key in transformed_data_dict:
             current_output1, current_output2, _ = transformed_data_dict[current_key]
             fig = px.scatter(x=[current_output1], y=[current_output2], 
