@@ -530,16 +530,16 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     params = {
-            'ciphers': ['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise'],
-            'num_samples': [5000],
-            'sample_length': [100, 300],
-            'epochs': [15],
-            'num_layers': [10, 20],
-            'batch_size': [64, 128],
+            'ciphers': [['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise']],
+            'num_samples': [15000],
+            'sample_length': [300],
+            'epochs': [30],
+            'num_layers': [64],
+            'batch_size': [128],
             'embedding_dim': [32],
             'hidden_dim': [64, 128],
             'dropout_rate': [0.01, 0.015, 0.02],
-            'learning_rate': [0.001, 0.002, 0.003]
+            'learning_rate': [0.0001, 0.0005, 0.001]
         }
 
 

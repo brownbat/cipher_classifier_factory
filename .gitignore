@@ -8,6 +8,7 @@ credentials.json
 *.gif
 *.png
 *.pt
+*.css
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
