@@ -16,9 +16,26 @@ import time
 
 # TODO duplication checks are very slow.
 # look at speed throughout
+# todo -- periodically sleep to cool down??
+# todo -- sleep and periodically scan a file in the directory to find params for more experiments to run?
 
 # Global flag and queue for communication
 should_continue = True
+
+
+# set these parameters with alternatives to run combination of all alternatives
+params = {
+        'ciphers': [['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise']],
+        'num_samples': [10000],
+        'sample_length': [500],
+        'epochs': [30],
+        'num_layers': [32, 64],
+        'batch_size': [128, 256],
+        'embedding_dim': [32, 64],
+        'hidden_dim': [128, 256],
+        'dropout_rate': [0.2, 0.3],
+        'learning_rate': [0.002, 0.003]
+    }
 
 
 def safe_json_load(file_path):
@@ -27,6 +44,13 @@ def safe_json_load(file_path):
             return json.load(file)
     except json.JSONDecodeError:
         # Handle empty or invalid JSON file
+        print(f"WARNING: {file_path} is empty or invalid. An empty list will be used.")
+        return []
+    except FileNotFoundError:
+        # Handle file not found and create a new empty file
+        print(f"WARNING: {file_path} not found. Creating a new file.")
+        with open(file_path, 'w') as file:
+            json.dump([], file)
         return []
 
 
@@ -525,23 +549,10 @@ def main():
     # add default experiments to the pending_experiments file
 
     global should_continue
-    build_cm_gifs = False
+    global params
+    build_cm_gifs = True
     
     signal.signal(signal.SIGINT, signal_handler)
-
-    params = {
-            'ciphers': [['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise']],
-            'num_samples': [15000],
-            'sample_length': [300],
-            'epochs': [30],
-            'num_layers': [64],
-            'batch_size': [128],
-            'embedding_dim': [32],
-            'hidden_dim': [64, 128],
-            'dropout_rate': [0.01, 0.015, 0.02],
-            'learning_rate': [0.0001, 0.0005, 0.001]
-        }
-
 
     generate_experiments(params)
     
@@ -590,6 +601,7 @@ def main():
         print("Skipping building confusion matrix .gif files...")
     elif build_cm_gifs:
         # Plot confusion matrices for the new experiments
+        # TODO: just plot for the best performer of the batch?
         # plot_confusion_matrices()
         pass  # do not plot, it's too slow
 

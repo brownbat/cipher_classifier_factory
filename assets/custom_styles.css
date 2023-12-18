@@ -2,21 +2,6 @@
         .slider-color-1 .rc-slider-track { background-color: hsl(0, 40%, 40%); }
         .slider-color-1 .rc-slider-handle { border-color: hsl(0, 40%, 40%); }
         
-        .slider-color-2 .rc-slider-track { background-color: hsl(51, 40%, 40%); }
-        .slider-color-2 .rc-slider-handle { border-color: hsl(51, 40%, 40%); }
-        
-        .slider-color-3 .rc-slider-track { background-color: hsl(102, 40%, 40%); }
-        .slider-color-3 .rc-slider-handle { border-color: hsl(102, 40%, 40%); }
-        
-        .slider-color-4 .rc-slider-track { background-color: hsl(154, 40%, 40%); }
-        .slider-color-4 .rc-slider-handle { border-color: hsl(154, 40%, 40%); }
-        
-        .slider-color-5 .rc-slider-track { background-color: hsl(205, 40%, 40%); }
-        .slider-color-5 .rc-slider-handle { border-color: hsl(205, 40%, 40%); }
-        
-        .slider-color-6 .rc-slider-track { background-color: hsl(257, 40%, 40%); }
-        .slider-color-6 .rc-slider-handle { border-color: hsl(257, 40%, 40%); }
-        
-        .slider-color-7 .rc-slider-track { background-color: hsl(308, 40%, 40%); }
-        .slider-color-7 .rc-slider-handle { border-color: hsl(308, 40%, 40%); }
+        .slider-color-2 .rc-slider-track { background-color: hsl(180, 40%, 40%); }
+        .slider-color-2 .rc-slider-handle { border-color: hsl(180, 40%, 40%); }
         

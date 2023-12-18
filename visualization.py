@@ -82,9 +82,36 @@ def setup_dash_app(data=sample_data):
     # Create DataFrame for graph scaling
     df = pd.DataFrame([metrics for _, metrics in transformed_data], columns=column_names)
 
+    # Identify unchanging parameters
+    constant_params = {k: v for k, v in param_value_map.items() if len(v) == 1}
+
     # Identifying variable parameters
     variable_params = {k: v for k, v in param_value_map.items() if len(v) > 1}
     num_params = len(variable_params)
+
+    # Find most accurate parameters
+    best_params_tuple = None
+    best_metric = -float("inf")  
+
+    for params_tuple, metrics_tuple in transformed_data:
+      value_to_track = metrics_tuple[1]  
+      if value_to_track > best_metric:
+        best_params_tuple = params_tuple
+        best_metric = value_to_track
+
+    best_params_dict = {}
+    for i, param_name in enumerate(param_value_map.keys()):
+      best_params_dict[param_name] = best_params_tuple[i]
+
+    # Reduce to the settings that are variable
+    best_variables = {}
+    for param_name, value in best_params_dict.items():
+      if param_name in variable_params:
+        best_variables[param_name] = value
+
+    # Construct legend content
+    constant_params_info = f"Fixed Parameters: {', '.join([f'{k}: {list(v)[0]}' for k, v in constant_params.items()])}"
+    highest_accuracy_info = f"Highest Accuracy Parameters: { best_variables }"
 
     colors = generate_colors(num_params)
     slider_css = generate_slider_css(num_params, colors)
@@ -110,7 +137,31 @@ def setup_dash_app(data=sample_data):
 
     app = dash.Dash(__name__)
     html_output = []
+    
+    # Title for the app
+    ciphers_list = data[0]['data_params']['ciphers']
+    title = "Distinguishing between " + ', '.join(ciphers_list)
+    html_output.append(html.Div([
+        html.H4(
+            "Distinguishing between " + ', '.join(ciphers_list))],
+            style={'text-align': 'center'}))
+
+    # Adding the graph (first a line br)
+    html_output.append(html.Br())
     html_output.append(dcc.Graph(id='output-graph', figure={'layout': graph_layout}))
+    html_output.append(html.Br())
+
+    '''
+    for k, v in constant_params.items():
+        param_info = f"{k.capitalize()}: {list(v)[0]}"
+        html_output.append(html.P(param_info))
+    '''
+    
+    # Add legend to HTML output
+    html_output.append(html.Div([
+        html.P(constant_params_info),
+        html.P(highest_accuracy_info)
+    ], style={'padding': '10px'}))
 
     for idx, (param_name, values) in enumerate(variable_params.items()):
         min_val, max_val = min(values), max(values)
