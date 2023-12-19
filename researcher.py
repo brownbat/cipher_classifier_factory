@@ -18,6 +18,9 @@ import time
 # look at speed throughout
 # todo -- periodically sleep to cool down??
 # todo -- sleep and periodically scan a file in the directory to find params for more experiments to run?
+# todo -- add additional ciphers, such as fractionated morse, bifid, ADFGVX, trifid, and even VIC or enigma
+
+
 
 # Global flag and queue for communication
 should_continue = True
@@ -29,12 +32,12 @@ params = {
         'num_samples': [10000],
         'sample_length': [500],
         'epochs': [30],
-        'num_layers': [32, 64],
-        'batch_size': [128, 256],
-        'embedding_dim': [32, 64],
-        'hidden_dim': [128, 256],
-        'dropout_rate': [0.2, 0.3],
-        'learning_rate': [0.002, 0.003]
+        'num_layers': [2, 4, 8, 16, 32, 64, 128],
+        'batch_size': [64, 128, 256, 512],
+        'embedding_dim': [32, 64, 128],
+        'hidden_dim': [128, 192, 256, 512],
+        'dropout_rate': [0.1, 0.2, 0.3, 0.4],
+        'learning_rate': [0.001, 0.002, 0.003, 0.004]
     }
 
 
@@ -564,6 +567,10 @@ def main():
 
     trained_experiments = []
     for exp in pending_experiments.copy():
+        # Count pending and completed experiments
+        num_pending = len(get_pending_experiments())
+        num_completed = len(get_completed_experiment_keys())
+
         print("Press `Ctrl+C` at any time to exit cleanly after this experiment completes.")
         if not should_continue:
             print("Exit command received. Stopping further processing.")
@@ -575,6 +582,7 @@ def main():
             continue
         updated_exp = run_experiment(exp)
         experiment_details = get_experiment_details(updated_exp)
+        experiment_details += f"\n{num_completed} experiments completed, {num_pending} remaining\n"
         print(experiment_details)
 
         notification_msg = "Training experiment completed"

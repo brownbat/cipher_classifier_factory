@@ -25,6 +25,7 @@ from IPython.display import Image as IPImage
 import imageio
 from ciphers import _get_cipher_functions, _get_cipher_names
 import time
+import subprocess
 
 # TODO: feature engineering, index of coincidence, digraphs, trigraphs,
 #   skipgraphs, ioc for subsets
@@ -177,6 +178,24 @@ def get_activation_function(activation_input):
     return activation_functions.get(activation_input.lower(), None)
 
 
+def get_gpu_temp():
+    process = subprocess.Popen(["sensors"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    output, _ = process.communicate()
+
+    # Convert bytes to string
+    sensor_data = output.decode()
+
+    # Regex to find temperature lines
+    edge_temp = re.search(r'edge:\s+\+(\d+\.\d+)°C', sensor_data)
+    junction_temp = re.search(r'junction:\s+\+(\d+\.\d+)°C', sensor_data)
+
+    # Extract temperatures
+    edge_temp_val = edge_temp.group(1) if edge_temp else None
+    junction_temp_val = float(junction_temp.group(1)) if junction_temp else None
+
+    return junction_temp_val
+
+
 def train_model(data, hyperparams):
     """
     Trains the LSTM model using the provided data and hyperparameters.
@@ -232,6 +251,10 @@ def train_model(data, hyperparams):
         print(f"Model initialization failed: {e}")
         raise  # Optionally re-raise the exception to stop the script
 
+    # Move model to GPU if available
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
     # Training setup
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -245,6 +268,10 @@ def train_model(data, hyperparams):
     start_time = time.time()
     confusion_matrices = []
     for epoch in range(epochs):
+        torch.cuda.empty_cache()
+        while get_gpu_temp() > 85:
+            print("WARNING: High GPU Temp!")
+            time.sleep(15)
         model.train()
         train_loss = 0
         correct_predictions = 0
@@ -253,6 +280,7 @@ def train_model(data, hyperparams):
         for inputs, labels in tqdm(
                 train_loader,
                 desc=f'Epoch {epoch+1}/{epochs} - Training'):
+            inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             logits = model(inputs)  # Get logits
             loss = criterion(logits, labels)
@@ -276,6 +304,7 @@ def train_model(data, hyperparams):
             for inputs, labels in tqdm(
                     val_loader,
                     desc=f'Epoch {epoch+1}/{epochs} - Validation'):
+                inputs, labels = inputs.to(device), labels.to(device)
                 logits = model(inputs)  # Get logits
                 loss = criterion(logits, labels)
                 val_loss += loss.item()

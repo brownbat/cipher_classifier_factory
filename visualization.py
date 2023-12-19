@@ -111,7 +111,7 @@ def setup_dash_app(data=sample_data):
 
     # Construct legend content
     constant_params_info = f"Fixed Parameters: {', '.join([f'{k}: {list(v)[0]}' for k, v in constant_params.items()])}"
-    highest_accuracy_info = f"Highest Accuracy Parameters: { best_variables }"
+    highest_accuracy_info = f"Highest Accuracy Parameters: { best_variables } with Accuracy of {best_metric}"
 
     colors = generate_colors(num_params)
     slider_css = generate_slider_css(num_params, colors)
@@ -165,7 +165,7 @@ def setup_dash_app(data=sample_data):
 
     for idx, (param_name, values) in enumerate(variable_params.items()):
         min_val, max_val = min(values), max(values)
-        marks = {float(val): str(val) for val in values}
+        marks = {val if isinstance(val, int) else float(val): str(val) for val in values}
 
         html_output.append(html.Div([
             html.Label(f'{param_name.capitalize()}'),
@@ -198,6 +198,12 @@ def setup_dash_app(data=sample_data):
                             for idx, param_name in enumerate(param_value_map.keys()))
 
         
+        if current_key not in transformed_data_dict:
+            fig = px.scatter(x=[0], y=[0], labels={'x':'Training Time', 'y':'Accuracy'})
+            fig.add_annotation(text="Untested parameter set",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="blue"))
         if current_key in transformed_data_dict:
             current_output1, current_output2, _ = transformed_data_dict[current_key]
             fig = px.scatter(x=[current_output1], y=[current_output2], 
@@ -257,7 +263,7 @@ def setup_dash_app(data=sample_data):
                                       x0=current_output1, y0=current_output2,  # add offsets here as appropriate
                                       x1=ghost_output1, y1=ghost_output2,
                                       line=dict(color=colors[idx % len(colors)], width=2, dash='dot'))
-            return fig
+        return fig
     return app
 
 
