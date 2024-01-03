@@ -1,25 +1,64 @@
 # Cipher_Classifier_Factory
  Builds LSTMs to classify ciphers, allows one to shift hyperparameters to measure effectiveness of competing models.
 
-Set up experiments to run in experiments.yaml in the data directory. 
+Set up experiments to run in pending_experiments.json in the data directory.
 
-Each entry of the form:
+Entries in this format:
 ```
-- data_params:
-    num_samples: 1000
-    sample_length: 500
-  experiment_id: exp_all_ciphers_1000_samples
-  hyperparams:
-    activation_func: relu
-    batch_size: 32
-    embedding_dim: 128
-    epochs: 5
-    hidden_dim: 128
-    learning_rate: 0.001
-  metrics: {}
+[
+  {
+    "data_params": {
+      "ciphers": [
+        "english",
+        "vigenere",
+        "caesar",
+        "columnar_transposition",
+        "random_noise"
+      ],
+      "num_samples": 10000,
+      "sample_length": 500
+    },
+    "hyperparams": {
+      "epochs": 30,
+      "num_layers": 32,
+      "batch_size": 64,
+      "embedding_dim": 32,
+      "hidden_dim": 192,
+      "dropout_rate": 0.3,
+      "learning_rate": 0.003
+    },
+    "experiment_id": "exp_9"
+  },
+  {
+    "data_params": {
+      "ciphers": [
+        "english",
+        ...
 ```
 
   The experiments will be run in turn, filling in metrics for later analysis.
 
-  (WARNING: This yaml structure will be revised in a future version.)
+Alternatively, specify lists of parameters (currently unceremoniously hard coded at the top of researcher.py)
+```
+params = {
+        'ciphers': [['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise']],
+        'num_samples': [10000],
+        'sample_length': [500],
+        'epochs': [30],
+        'num_layers': [32, 64, 128],
+        'batch_size': [64, 128, 256],
+        'embedding_dim': [32, 64, 128],
+        'hidden_dim': [192, 256, 512],
+        'dropout_rate': [0.1, 0.2, 0.3],
+        'learning_rate': [0.001, 0.002, 0.003]
+    }
+```
+Researcher will calculate all combination of provided options and populate pending_experiments.json with those options, then run through them in sequence.
+
+NOTE: yaml has been deprecated, it was far too slow.
+
+Currently many models are getting into the 97-99% accuracy range after just a minute of training on one 7900 XTX. Further experiments will help identify how much training with what settings will be needed to provide robust identification of many known classical ciphers. Effectiveness may hit ceilings as we approach more complex ciphers that implement some combination of substitution and transposition or multiple rounds of encipherment.
+
+ROADMAP: Add more classical ciphers. Tack on an attention layer in place. Eventually move fully to a transformer model.
+  
 ![demo](https://github.com/brownbat/cipher_classifier_factory/assets/26754/0f89f7a5-14b5-496e-ac74-6d21d8b2180d)
