@@ -20,7 +20,9 @@ import time
 # todo -- sleep and periodically scan a file in the directory to find params for more experiments to run?
 # todo -- add additional ciphers, such as fractionated morse, bifid, ADFGVX, trifid, and even VIC or enigma
 
-
+# set file location as working directory
+dir_path = os.path.dirname(os.path.realpath(__file__))
+os.chdir(dir_path)
 
 # Global flag and queue for communication
 should_continue = True
@@ -553,7 +555,7 @@ def main():
 
     global should_continue
     global params
-    build_cm_gifs = True
+    build_cm_gifs = False
     
     signal.signal(signal.SIGINT, signal_handler)
 

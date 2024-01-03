@@ -26,6 +26,7 @@ import imageio
 from ciphers import _get_cipher_functions, _get_cipher_names
 import time
 import subprocess
+import gc
 
 # TODO: feature engineering, index of coincidence, digraphs, trigraphs,
 #   skipgraphs, ioc for subsets
@@ -269,9 +270,10 @@ def train_model(data, hyperparams):
     confusion_matrices = []
     for epoch in range(epochs):
         torch.cuda.empty_cache()
-        while get_gpu_temp() > 85:
+        gc.collect()  # add explicit garbage collection to prevent memory leaks
+        while get_gpu_temp() > 103:
             print("WARNING: High GPU Temp!")
-            time.sleep(15)
+            time.sleep(16)
         model.train()
         train_loss = 0
         correct_predictions = 0
