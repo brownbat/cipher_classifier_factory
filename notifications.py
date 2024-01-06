@@ -51,14 +51,18 @@ def send_discord_notification(message):
 
     credentials = get_credentials()
     webhook = credentials['webhook']
-    result = requests.post(webhook, json=data)
 
     try:
+        result = requests.post(webhook, json=data)
         result.raise_for_status()
-    except requests.exceptions.HTTPError as err:
-        print(err)
+    except requests.exceptions.SSLError as ssl_err:
+        print(f"WARNING: SSL Error occurred: {ssl_err}\n" +
+              f"Message not delivered\n{message}")
+    except requests.exceptions.RequestException as req_err:
+        print(f"WARNING: Request Error occurred: {req_err}\n" +
+              f"Message not delivered\n{message}")
     else:
-        print("Payload delivered successfully, code {}.".format(result.status_code))
+        print(f"Payload delivered successfully, code {result.status_code}.")
 
 if __name__ == "__main__":
     # send_email(test=True)

@@ -27,6 +27,13 @@ os.chdir(dir_path)
 # Global flag and queue for communication
 should_continue = True
 
+# TODO -- INVESTIGATE
+# why is {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.2, 'learning_rate': 0.001}
+# so awful compared to neighbors? random bad luck on dropout? re-run
+# it only had 55.7 accuracy, but we get 
+# 96 accuracy from {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.1, 'learning_rate': 0.003}
+
+
 
 # set these parameters with alternatives to run combination of all alternatives
 params = {
@@ -34,12 +41,12 @@ params = {
         'num_samples': [10000],
         'sample_length': [500],
         'epochs': [30],
-        'num_layers': [2, 4, 8, 16, 32, 64, 128],
-        'batch_size': [64, 128, 256, 512],
+        'num_layers': [32, 64, 128],
+        'batch_size': [64, 128, 256],
         'embedding_dim': [32, 64, 128],
-        'hidden_dim': [128, 192, 256, 512],
-        'dropout_rate': [0.1, 0.2, 0.3, 0.4],
-        'learning_rate': [0.001, 0.002, 0.003, 0.004]
+        'hidden_dim': [192, 256, 512],
+        'dropout_rate': [0.1, 0.2, 0.3],
+        'learning_rate': [0.001, 0.002, 0.003]
     }
 
 
@@ -546,26 +553,17 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
 
 
 def main():
-    # for experiments with previously run keys (settings) --
-    # options: SKIP (current), re-run and add, re-run and overwrite, prompt user
-    # if you skip it, should you delete it from researcher.py?
-    # TODO: add a key or hash of key to the exp in the file
-
-    # add default experiments to the pending_experiments file
-
     global should_continue
     global params
     build_cm_gifs = False
-    
+
     signal.signal(signal.SIGINT, signal_handler)
 
     generate_experiments(params)
-    
+
     # Run experiments from the pending file
     pending_experiments = get_pending_experiments()
     completed_keys = get_completed_experiment_keys()
-
-
 
     trained_experiments = []
     for exp in pending_experiments.copy():
@@ -577,15 +575,21 @@ def main():
         if not should_continue:
             print("Exit command received. Stopping further processing.")
             break
-        
+
         exp_key = experiment_key(exp)
         if exp_key in completed_keys:
-            print(f"Skipping experiment already run with key:\n{exp_key}\n")
+            print(f"Experiment with key {exp_key} already completed. Removing from pending list.")
+            pending_experiments.remove(exp)
             continue
+            
         updated_exp = run_experiment(exp)
         experiment_details = get_experiment_details(updated_exp)
         experiment_details += f"\n{num_completed} experiments completed, {num_pending} remaining\n"
+        print("***")
         print(experiment_details)
+        print("EXP:")
+        print(exp['hyperparams'])
+        print("***")
 
         notification_msg = "Training experiment completed"
         notification_msg += experiment_details
@@ -596,7 +600,6 @@ def main():
             'data/completed_experiments.json', updated_exp)
         pending_experiments.remove(exp)
         # Update the pending experiments file with the remaining experiments
-        # need to get experiments from somewhere
         rewrite_experiment_file(
             'data/pending_experiments.json', pending_experiments)
 

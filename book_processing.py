@@ -173,7 +173,6 @@ def get_random_text_passage(length):
                 start = random.randint(0, len(text) - length)
                 return text[start:start + length]
 
-
 # Example Usage
 if __name__ == "__main__":
     failed_book_ids = load_failed_book_ids()

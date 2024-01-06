@@ -1,8 +1,8 @@
 import string
 import random
 import book_processing
-from itertools import cycle
 import inspect
+import itertools
 
 
 def _get_cipher_functions():
@@ -20,12 +20,15 @@ def _get_cipher_names():
     return [name for name, func in globals().items() if inspect.isfunction(func) and not name.startswith('_')]
 
 
-def _normalize_text(text):
+def _normalize_text(text, keep_spaces=False):
     """
     Normalize the text by converting to lowercase and keeping only ASCII
     letters.
     """
-    return ''.join(_ for _ in text.lower() if _ in string.ascii_lowercase)
+    if keep_spaces:
+        return ''.join(_ for _ in text.lower() if _ in string.ascii_lowercase+' ')
+    else:
+        return ''.join(_ for _ in text.lower() if _ in string.ascii_lowercase)
 
 
 def _random_keyword(length=None):
@@ -41,9 +44,11 @@ def _random_keyword(length=None):
 
 
 # TODO deal with the fact these signatures are not uniform
-def english(length=None):
+def english(length=None, keep_spaces=False):
     '''
     Returns random strings of english text from leading project gutenberg texts
+    Note that stored text is already preprocesesed and reduced to ascii
+    with no spaces or symbols
     '''
     if length is None:
         length = random.randint(200,700)
@@ -124,7 +129,7 @@ def beaufort(length=None, text=None, key=None):
     text = text.lower()
 
     encrypted_text = ''
-    for char, key_char in zip(text, cycle(key)):
+    for char, key_char in zip(text, itertools.cycle(key)):
         encrypted_text += shift_char(char, key_char)
 
     return encrypted_text
@@ -173,7 +178,7 @@ def random_noise(length=None, characters=string.ascii_lowercase):
     return ''.join(random.choice(characters) for _ in range(length))
 
 
-def _playfair_build_matrix(keyword=None):
+def _build_polybius(keyword=None):
     if keyword is None:
         keyword = _random_keyword()
     matrix = ['' for _ in range(5)]
@@ -188,7 +193,6 @@ def _playfair_build_matrix(keyword=None):
                 i += 1
                 j = 0
     return matrix
-
 
 def _playfair_digraph_prep(text, encode=True):
     result = []
@@ -205,7 +209,9 @@ def _playfair_digraph_prep(text, encode=True):
             result.append(char1)
             result.append(char2)
             i += 2  # Increment i by 2 as we've processed two characters
-
+    # Append 'x' if the last character is left unpaired
+    if len(result) % 2 != 0:
+        result.append('x')
     return ''.join(result)
 
 
@@ -273,13 +279,127 @@ def playfair(length=None, text=None, keyword=None, encode=True):
         if length is None:
             length = random.randint(200, 700)
         text = english(length)
-    text = _playfair_digraph_prep(text, encode)
     text = _normalize_text(text)
+    text = _playfair_digraph_prep(text, encode)
     if keyword is None:
         keyword = _random_keyword()
-    matrix = _playfair_build_matrix(keyword)
+    matrix = _build_polybius(keyword)
 
     return _playfair_encrypt_decrypt(matrix, text, encode)
+
+
+def bifid(length=None, text=None, keyword=None, encode=True):
+    # note, encode and decode are the same operation, it is a dummy param to match other ciphers
+    if text is None:
+        if length is None:
+            length = random.randint(200, 700)
+        text = english(length)
+    text = _normalize_text(text)
+    
+    # Create Polybius square
+    matrix = _build_polybius(keyword)
+
+    def find_position(letter):
+        if letter == 'j':
+            letter = 'i'
+        for i, row in enumerate(matrix):
+            if letter in row:
+                return i, row.index(letter)
+        return None, None
+
+    position_dictionary = {}
+    for idx1, row in enumerate(matrix):
+        for idx2, letter in enumerate(list(row)):
+            position_dictionary[letter] = (idx1, idx2)
+    position_dictionary['j'] = position_dictionary['i']
+
+    # Convert text to coordinates
+    coordinates = [position_dictionary[char] for char in text]
+    rows, cols = zip(*coordinates)
+
+    def flatten(t):
+        # flatten a 2d tensor into a flat list
+        return [c for r in t for c in r]
+    # Merge and split process
+    if encode:
+        merged = rows + cols
+    else:
+        flat_coords = flatten(coordinates)
+        midpoint = len(flat_coords) // 2
+        first_half_coords, last_half_coords = flat_coords[:midpoint], flat_coords[midpoint:]
+        merged = flatten(list(zip(first_half_coords, last_half_coords)))
+    new_pairs = [(merged[i], merged[i + 1]) for i in range(0, len(merged), 2)]
+
+    # Convert coordinates back to text
+    bifid_text = ''.join(matrix[row][col] for row, col in new_pairs)
+
+    return bifid_text
+
+
+def fractionated_morse(length=None, text=None, key=None, shift=0, encode=True):
+    # TODO: retain spaces 
+    # initialize text
+    if text is None:
+        if length is None:
+            length = random.randint(200, 700)
+        text = english(length)
+        if encode == False:
+            raise ValueError("fractionated_morse: Cannot decode empty text")
+    text = _normalize_text(text, keep_spaces = True)
+
+    # initialize morse
+    morse_code = {
+        'a': '.-', 'b': '-...', 'c': '-.-.', 'd': '-..', 'e': '.',
+        'f': '..-.', 'g': '--.', 'h': '....', 'i': '..', 'j': '.---',
+        'k': '-.-', 'l': '.-..', 'm': '--', 'n': '-.', 'o': '---',
+        'p': '.--.', 'q': '--.-', 'r': '.-.', 's': '...', 't': '-',
+        'u': '..-', 'v': '...-', 'w': '.--', 'x': '-..-', 'y': '-.--',
+        'z': '--..', ' ': '|'
+    }
+
+    # generate fractionation table
+    fm_symbols = ['.', '-', 'x']
+    ternary_alphabet = [''.join(comb) for comb in itertools.product(fm_symbols, repeat=3)]
+    shifted_alphabet = string.ascii_lowercase[shift:] + string.ascii_lowercase[:shift]
+    final_alphabet = ""
+
+    if key is not None:
+        key = _normalize_text(key)
+        new_key = ""
+        for k in key:
+            if k not in new_key:
+                new_key += k
+                shifted_alphabet = shifted_alphabet.replace(k, '')
+        final_alphabet = new_key + shifted_alphabet
+    else:
+        final_alphabet = shifted_alphabet
+    fractionation_table = dict(zip(ternary_alphabet, final_alphabet))
+
+    if encode:
+        morse_text = "x".join([morse_code[letter] for letter in text])
+        morse_text = morse_text.replace('|', '') # pipe is a placeholder for spaces, which are represented as 'xx' in fractionated morse
+        while len(morse_text) % 3 != 0:
+            morse_text += 'x'
+        output_text = "".join(fractionation_table[morse_text[i:i+3]] for i in range(0, len(morse_text), 3))
+    else:
+        # Inverse fractionation table: mapping from letters back to Morse code trigraphs
+        inverse_fractionation_table = {v: k for k, v in fractionation_table.items()}
+        inverse_morse_code = {v: k for k, v in morse_code.items()}
+        inverse_morse_code[' '] = ' '
+
+        # Convert each letter of the encoded text back to its Morse code trigraph
+        morse_text = "".join(inverse_fractionation_table[letter] for letter in text)
+
+        # Morse to text conversion
+        # Split the Morse code into individual Morse characters (dot, dash, space)
+
+        morse_text = morse_text.replace('xx', 'x x')
+        morse_chars = morse_text.split('x')
+        
+        # Convert Morse code back to text
+        output_text = "".join(inverse_morse_code.get(morse_char, '?') for morse_char in morse_chars)
+
+    return output_text
 
 
 def columnar_transposition(length=None, text=None, key=None, padding_char=None, encode=True):
@@ -372,7 +492,7 @@ def columnar_transposition(length=None, text=None, key=None, padding_char=None, 
         return ''.join(''.join(row) for row in matrix).rstrip()
 
 
-# TODO implement fractionated morse, bifid, ADFGVX, trifid, VIC, enigma
+# TODO implement ADFGVX, trifid, VIC, enigma, railfence
 
 
 if __name__ == "__main__":
@@ -420,3 +540,23 @@ if __name__ == "__main__":
         + f"Encrypted: {encrypted}, Decrypted: {decrypted}"
         )
 
+    # Test the Fractionated Morse Cipher
+    print("\nTesting Fractionated Morse Cipher:")
+    original_text = "Fractionated Morse cipher test"
+    key = "KEYWORD"  # Define a keyword for the fractionated Morse cipher
+    shift = 3  # Define a shift value
+
+    encrypted = fractionated_morse(text=original_text, key=key, shift=shift, encode=True)
+    decrypted = fractionated_morse(text=encrypted, key=key, shift=shift, encode=False)
+    print(
+        f"Original: {original_text},"
+        + f" Encrypted: {encrypted}, Decrypted: {decrypted}"
+    )
+
+    print("\nTesting Bifid Cipher:")
+    original_text = "attackatdawn"
+    keyword = "keyword"
+    encrypted = bifid(text=original_text, keyword=keyword, encode=True)
+    decrypted = bifid(text=encrypted, keyword=keyword, encode=False)
+
+    print(f"Original: {original_text}, Encrypted: {encrypted}, Decrypted: {decrypted}")
