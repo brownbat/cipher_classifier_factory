@@ -7,6 +7,7 @@ import pandas as pd
 import os
 from researcher import safe_json_load
 import glob
+import json
 
 # TODO:
 # 1. clicking ghost points should adjust settings (using a click handler)
@@ -21,7 +22,35 @@ import glob
 # allow user to designate which metrics are sliders and which are x/y and which are simply ignored
 # display in a text box somewhere those other metrics
 
-USE_MAIN_DATASET = True  # restrict to only the main completed_experiments.json file, rather than pulling in every historical .json
+
+USE_MAIN_DATASET = False  # restrict to only the main completed_experiments.json file, rather than pulling in every historical .json
+
+
+def calculate_avg_accuracy_per_value(data, param_name):
+    # Group data by the value of the hyperparameter and collect accuracies
+    value_accuracy_dict = {}
+    for experiment in data:
+        # Check both 'data_params' and 'hyperparams' for the parameter
+        if param_name in experiment['data_params']:
+            value = experiment['data_params'][param_name]
+        elif param_name in experiment['hyperparams']:
+            value = experiment['hyperparams'][param_name]
+        else:
+            # Handle cases where the parameter is missing
+            continue  # or raise an error, or handle as needed
+        # Obtain the last known accuracy value, ensuring it is not None
+        accuracy = experiment['metrics']['val_accuracy'][-1] if experiment['metrics']['val_accuracy'] else None
+        if accuracy is not None and accuracy > 0:  # Only consider non-null accuracies
+            if value not in value_accuracy_dict:
+                value_accuracy_dict[value] = []
+            value_accuracy_dict[value].append(accuracy)
+
+    # Calculate average accuracy for each value, excluding any null results
+    avg_accuracy_per_value = {
+        value: sum(accuracies) / len(accuracies) 
+        for value, accuracies in value_accuracy_dict.items() if accuracies  # Ensure there are accuracies to average
+    }
+    return avg_accuracy_per_value
 
 
 def load_subset_of_data(file_path='data/completed_experiments-subset.json', max_experiments=100):
@@ -37,6 +66,17 @@ def generate_colors(num_colors, saturation=40, lightness=40):
         hue = int((360 / num_colors) * i)  # Evenly space the hue
         colors.append(f"hsl({hue}, {saturation}%, {lightness}%)")
     return colors
+
+
+def generate_slider_marks(data, param_name):
+    avg_accuracy_per_value = calculate_avg_accuracy_per_value(data, param_name)
+    marks = {}
+    for value, accuracy in avg_accuracy_per_value.items():
+        # Format the accuracy as a string with 3 decimal places
+        accuracy_str = f"{accuracy:.3f}"
+        # Set the label with the value and average accuracy (avg acc)
+        marks[value] = f"{value} ({accuracy_str})"
+    return marks
 
 
 def generate_slider_css(num_sliders, colors):
@@ -163,7 +203,8 @@ def setup_dash_app(data=None):
 
     for idx, (param_name, values) in enumerate(variable_params.items()):
         min_val, max_val = min(values), max(values)
-        marks = {val if isinstance(val, int) else float(val): str(val) for val in values}
+        # marks = {val if isinstance(val, int) else float(val): str(val) for val in values}
+        marks = generate_slider_marks(data, param_name)
 
         html_output.append(html.Div([
             html.Label(f'{param_name.capitalize()}'),

@@ -6,6 +6,7 @@ import requests
 
 FILE_PATH = 'credentials.json'
 
+
 def get_credentials(f_path=None):
     if f_path is None:
         f_path = FILE_PATH

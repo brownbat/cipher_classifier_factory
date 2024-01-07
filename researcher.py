@@ -224,61 +224,18 @@ def get_experiment_details(exp):
     return '\n'.join(details)
 
 
-def run_experiments(pending_file, completed_file):
-    '''
-    Runs experiments from pending_experiments.json and writes results to
-    completed_experiments.json
-    '''
-    # TODO align with data structure
-    trained_experiments = []  # List to store IDs of experiments that were trained
-
-    with open(pending_file, 'r') as file:
-        experiments = safe_json_load(pending_file)
-
-    for exp in experiments.copy():  # Iterate over a copy of the list
-        data_params = exp.get('data_params', {})
-        hyperparams = exp.get('hyperparams', {})
-
-        # Remove the experiment from the pending list before modifying it
-        experiments.remove(exp)
-
-        # Append timestamp to the experiment ID for uniqueness
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        print(f"Running experiment: {exp['experiment_id']}...")
-        data = get_data(data_params)
-        model, metrics = train_model(data, hyperparams)
-        exp['metrics'] = convert_ndarray_to_list(metrics)
-
-        # Update experiment details with results
-        exp['training_time'] = timestamp
-        unique_id = f'{exp["experiment_id"]}_{exp["training_time"]}'
-        exp['uid'] = unique_id
-        model_filename = f'data/models/{unique_id}.pt'
-        exp['model_filename'] = model_filename
-        torch.save(model.state_dict(), model_filename)
-    
-        # Append this experiment to the completed experiments file
-        append_to_experiment_file(completed_file, exp)
-
-        # Add trained experiment ID to the list
-        trained_experiments.append(exp['uid'])
-
-        print(f"Experiment {exp['experiment_id']} completed.")
-        print(get_experiment_details(exp))
-
-        # Update the pending experiments file with the remaining experiments
-        rewrite_experiment_file(pending_file, experiments)
-
-    return trained_experiments
-
-
 def run_experiment(exp):
     '''
     Runs one experiment and writes results to completed_experiments.json
     '''
     data_params = exp.get('data_params', {})
     hyperparams = exp.get('hyperparams', {})
+
+    # TODO - Isolate unusual bug where num_samples is sometimes missing from recorded experiments
+    # DEBUG - Check if 'num_samples' is missing in data_params
+    if 'num_samples' not in data_params:
+        raise ValueError(f"'num_samples' is missing in data_params for experiment {exp.get('experiment_id')}")
+
 
     # Append timestamp to the experiment ID for uniqueness
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
