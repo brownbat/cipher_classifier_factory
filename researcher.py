@@ -48,6 +48,7 @@ params = {
         'dropout_rate': [0.1, 0.2, 0.3],
         'learning_rate': [0.001, 0.002, 0.003]
     }
+params = {}
 
 
 def safe_json_load(file_path):
@@ -492,7 +493,8 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
         'embedding_dim': 32,
         'hidden_dim': 64,
         'dropout_rate': 0.015,
-        'learning_rate': 0.002
+        'learning_rate': 0.002,
+        'ciphers': ['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise']
     }
     default_params.update(settings)
     settings.update(default_params)

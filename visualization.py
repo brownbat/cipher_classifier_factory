@@ -6,22 +6,23 @@ import plotly.express as px
 import pandas as pd
 import os
 from researcher import safe_json_load
+import glob
 
-# TODO: rational graph size and marks
-# deal with slowness for large files
-# click handle so ghost points adjust settings
-# adjust canvas/frame/graph x/y so it is scaled tightly enough you can see differences
-# why does the L124 print statement fire twice
-# maybe greedily load nearby points only?
-
-# use a database?
-# maybe strip experiments file to only those critical values necessary?
-# why isn't learning rate dynamically captured as a parameter
+# TODO:
+# 1. clicking ghost points should adjust settings (using a click handler)
+# 2. greedily load nearby points only for efficiency
+# 3. load multiple files
+# 4. host in the cloud
+# 5. provide some hint as to how much each param matters / does not
+# - calculate average and std dev for all experiments at that param's
+#   current value, show a graph of that beneath each slider?
+# move from json to a database?
 
 # allow user to designate which metrics are sliders and which are x/y and which are simply ignored
 # display in a text box somewhere those other metrics
 
-sample_data = safe_json_load('data/completed_experiments.json')
+USE_MAIN_DATASET = True  # restrict to only the main completed_experiments.json file, rather than pulling in every historical .json
+
 
 def load_subset_of_data(file_path='data/completed_experiments-subset.json', max_experiments=100):
     with open(file_path, 'r') as file:
@@ -72,7 +73,10 @@ def write_css_to_file(css_content, filename='assets/custom_styles.css'):
         file.write(css_content)
 
 
-def setup_dash_app(data=sample_data):
+def setup_dash_app(data=None):
+    if data is None:
+        raise ValueError("No data specified for setup_dash_app()")
+
     transformed_data = transform_data(data)
     transformed_data_dict = {params: metrics for params, metrics in transformed_data}
     param_value_map = build_param_value_map(transformed_data)
@@ -151,12 +155,6 @@ def setup_dash_app(data=sample_data):
     html_output.append(dcc.Graph(id='output-graph', figure={'layout': graph_layout}))
     html_output.append(html.Br())
 
-    '''
-    for k, v in constant_params.items():
-        param_info = f"{k.capitalize()}: {list(v)[0]}"
-        html_output.append(html.P(param_info))
-    '''
-    
     # Add legend to HTML output
     html_output.append(html.Div([
         html.P(constant_params_info),
@@ -240,10 +238,6 @@ def setup_dash_app(data=sample_data):
                     if next_key in transformed_data_dict:
                         ghost_output1, ghost_output2, _ = transformed_data_dict[next_key]
                         output_values = {'output1':df['output1'], 'output2':df['output2']}
-                        '''offsets = generate_offsets(output_values)
-                        offset_x, offset_y = offsets[idx % len(offsets)]
-                        display_output1 = ghost_output1 + offset_x
-                        display_output2 = ghost_output2 + offset_y'''
 
                         # Add ghost point to the plot with hover info displaying original values
                         label = f'Ghost Point for {param_name} (Param{idx + 1})'
@@ -267,9 +261,6 @@ def setup_dash_app(data=sample_data):
     return app
 
 
-"""('num_ciphers', 'num_samples', 'sample_length', 'batch_size', 'dropout_rate',
-'embedding_dim', 'epochs', 'hidden_dim', 'learning_rate', 'num_layers'):
-    ('training_duration', 'val_accuracy', 'val_loss')"""
 def transform_data(data):
     transformed_tuples = []
     for experiment in data:
@@ -331,7 +322,21 @@ def transform_data_dynamic(data):
     return transformed_tuples
 
 
-def run_app(data=sample_data):
+def load_and_concatenate_json_files(pattern):
+    all_data = []
+    for file_name in glob.glob(pattern):
+        data = safe_json_load(file_name)
+        all_data.extend(data)
+    return all_data
+
+
+def run_app():
+    if USE_MAIN_DATASET:
+        data = safe_json_load('data/completed_experiments.json')
+    else:  # use all completed jsons in the data folder
+        json_files_pattern = "data/completed_experiments*.json"
+        data = load_and_concatenate_json_files(json_files_pattern)
+
     num_params = len(list(data[0].keys()))
     app = setup_dash_app(data)
     app.run_server(debug=True)
@@ -372,4 +377,4 @@ def build_param_value_map(transformed_data):
 
 
 if __name__ == '__main__':
-    run_app(sample_data)
+    run_app()
