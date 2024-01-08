@@ -62,3 +62,7 @@ Currently many models are getting into the 97-99% accuracy range after just a mi
 ROADMAP: Add more classical ciphers. Tack on an attention layer in place. Eventually move fully to a transformer model.
   
 ![demo](https://github.com/brownbat/cipher_classifier_factory/assets/26754/0f89f7a5-14b5-496e-ac74-6d21d8b2180d)
+
+You can play with a subset of the collected data [here](https://brownbat.pythonanywhere.com/).
+
+So far I've been surprised with how nonlinearly performance responds to different hyperparameters, there's not one you can just crank and always get better results, they are all very interdependent. This may indicate that there's high sensitivity to initial conditions, possibly heavily dependent on randomness like how the samples are divided into training and validation sets or something similar.
