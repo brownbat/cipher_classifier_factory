@@ -5,7 +5,7 @@ from dash.dependencies import Input, Output
 import plotly.express as px
 import pandas as pd
 import os
-from researcher import safe_json_load
+# from researcher import safe_json_load
 import glob
 import json
 
@@ -24,6 +24,48 @@ import json
 
 
 USE_MAIN_DATASET = False  # restrict to only the main completed_experiments.json file, rather than pulling in every historical .json
+
+
+def safe_json_load(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            return json.load(file)
+    except json.JSONDecodeError:
+        # Handle empty or invalid JSON file
+        print(f"WARNING: {file_path} is empty or invalid. An empty list will be used.")
+        return []
+    except FileNotFoundError:
+        # Handle file not found and create a new empty file
+        print(f"WARNING: {file_path} not found. Creating a new file.")
+        with open(file_path, 'w') as file:
+            json.dump([], file)
+        return []
+
+
+def filter_experiments(experiments, filter_criteria):
+    """
+    Filter out experiments that do not meet the filter criteria.
+
+    Args:
+    - experiments (list): List of experiment dictionaries.
+    - filter_criteria (dict): Dictionary of parameters to accept.
+
+    Returns:
+    - (list): Filtered list of experiments.
+    """
+    filtered_experiments = []
+    for exp in experiments:
+        include_exp = True
+        for param, legal_values in filter_criteria.items():
+            if param in exp['hyperparams'] and exp['hyperparams'][param] not in legal_values:
+                include_exp = False
+                break
+            if param in exp['data_params'] and exp['data_params'][param] not in legal_values:
+                include_exp = False
+                break
+        if include_exp:
+            filtered_experiments.append(exp)
+    return filtered_experiments
 
 
 def calculate_avg_accuracy_per_value(data, param_name):
@@ -371,16 +413,27 @@ def load_and_concatenate_json_files(pattern):
     return all_data
 
 
-def run_app():
+def load_data():
     if USE_MAIN_DATASET:
         data = safe_json_load('data/completed_experiments.json')
     else:  # use all completed jsons in the data folder
         json_files_pattern = "data/completed_experiments*.json"
         data = load_and_concatenate_json_files(json_files_pattern)
 
-    num_params = len(list(data[0].keys()))
-    app = setup_dash_app(data)
-    app.run_server(debug=True)
+    params = {
+        'ciphers': [['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise']],
+        'num_samples': [10000],
+        'sample_length': [500],
+        'epochs': [30],
+        # 'num_layers': [32, 64, 128],
+        'batch_size': [64, 128, 256],
+        'embedding_dim': [32, 64, 128],
+        'hidden_dim': [192, 256, 512],
+        'dropout_rate': [0.1, 0.2, 0.3],
+        'learning_rate': [0.001, 0.002, 0.003]
+    }
+    data = filter_experiments(data, params)
+    return data
 
 
 def build_param_value_map_dynamic(transformed_data):
@@ -417,5 +470,9 @@ def build_param_value_map(transformed_data):
     return param_value_map
 
 
+data = load_data()
+app = setup_dash_app(data)
+
 if __name__ == '__main__':
-    run_app()
+    app.run_server(debug=True)
+

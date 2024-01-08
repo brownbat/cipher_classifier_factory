@@ -10,15 +10,18 @@ import seaborn as sns
 import imageio.v2 as imageio
 from train_lstm import train_model, get_data
 from ciphers import _get_cipher_names
+import torch
+print(f"Using versions {torch.__version__}")
 
 import signal
 import time
 
 # TODO duplication checks are very slow.
 # look at speed throughout
-# todo -- periodically sleep to cool down??
+# todo -- periodically sleep to cool down?
 # todo -- sleep and periodically scan a file in the directory to find params for more experiments to run?
-# todo -- add additional ciphers, such as fractionated morse, bifid, ADFGVX, trifid, and even VIC or enigma
+# todo -- add additional ciphers, such as ADFGVX, trifid, VIC, enigma, railfence
+# move from LSTM to transformers
 
 # set file location as working directory
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -34,21 +37,20 @@ should_continue = True
 # 96 accuracy from {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.1, 'learning_rate': 0.003}
 
 
-
 # set these parameters with alternatives to run combination of all alternatives
 params = {
         'ciphers': [['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise']],
         'num_samples': [10000],
         'sample_length': [500],
         'epochs': [30],
-        'num_layers': [32, 64, 128],
-        'batch_size': [64, 128, 256],
-        'embedding_dim': [32, 64, 128],
-        'hidden_dim': [192, 256, 512],
-        'dropout_rate': [0.1, 0.2, 0.3],
-        'learning_rate': [0.001, 0.002, 0.003]
+        'num_layers': [2, 4, 16, 32, 64],
+        'batch_size': [64, 128],
+        'embedding_dim': [64, 128],
+        'hidden_dim': [256, 512],
+        'dropout_rate': [0.2, 0.3],
+        'learning_rate': [0.002, 0.003]
     }
-params = {}
+# params = {}
 
 
 def safe_json_load(file_path):
@@ -509,6 +511,8 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
             json.dump(existing_pending_experiments, file)
     else:
         print("No new experiments to add.")
+    pending_keys = load_experiment_keys(pending_file)
+    print(f"{len(pending_keys)} total experiments to run.")
 
 
 def main():
