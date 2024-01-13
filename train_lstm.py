@@ -187,12 +187,12 @@ def get_gpu_temp():
     sensor_data = output.decode()
 
     # Regex to find temperature lines
-    edge_temp = re.search(r'edge:\s+\+(\d+\.\d+)°C', sensor_data)
+    # edge_temp = re.search(r'edge:\s+\+(\d+\.\d+)°C', sensor_data)
     junction_temp = re.search(r'junction:\s+\+(\d+\.\d+)°C', sensor_data)
 
     # Extract temperatures
-    edge_temp_val = edge_temp.group(1) if edge_temp else None
-    junction_temp_val = float(junction_temp.group(1)) if junction_temp else None
+    # edge_temp_val = edge_temp.group(1) if edge_temp else -1
+    junction_temp_val = float(junction_temp.group(1)) if junction_temp else -1
 
     return junction_temp_val
 
@@ -271,7 +271,7 @@ def train_model(data, hyperparams):
     for epoch in range(epochs):
         torch.cuda.empty_cache()
         gc.collect()  # add explicit garbage collection to prevent memory leaks
-        while get_gpu_temp() > 101:
+        while get_gpu_temp() > 102:  # to address runaway heating issues on rocm5.6 that seem to have been resolved in rocm5.7
             print("WARNING: High GPU Temp!")
             time.sleep(20)
         model.train()

@@ -113,6 +113,18 @@ def vigenere(length=None, text=None, key=None, encode=True):
     return ''.join(result)
 
 
+def _test_cipher_1(length=None, text=None, encode=True):
+    # NOTE: Remove leading _ to make this count as a real cipher
+    key = "palimpsest"
+    return vigenere(length=length, text=text, key=key, encode=encode)
+
+
+def _test_cipher_2(length=None, text=None, encode=True):
+    # NOTE: Remove leading _ to make this count as a real cipher
+    key = "palinpsest"
+    return vigenere(length=length, text=text, key=key, encode=encode)
+
+
 def beaufort(length=None, text=None, key=None):
     if text is None:
         if length is None:

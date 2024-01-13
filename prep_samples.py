@@ -8,6 +8,8 @@ import json
 import hashlib
 
 
+# TODO fix odd bug div by zero
+
 def file_hash(filename):
     """Generate a hash for a file."""
     sha256_hash = hashlib.sha256()
@@ -72,9 +74,11 @@ def generate_batches_parallel(cipher_funcs=None, total_samples=10000, sample_len
         cipher_funcs = ciphers._get_cipher_functions()
 
     # Calculate the number of batches each worker will generate
-    batches_per_worker = (total_samples + len(cipher_funcs) - 1) // len(cipher_funcs) // num_workers
-    remaining_batches = (total_samples + len(cipher_funcs) - 1) // len(cipher_funcs) % num_workers
-
+    total_batches = (total_samples + len(cipher_funcs) - 1) // len(cipher_funcs)
+    num_workers = min(num_workers, total_batches)  # Ensure we don't have more workers than batches
+    batches_per_worker = total_batches // num_workers
+    remaining_batches = total_batches % num_workers
+    
     samples = pd.DataFrame(columns=['text', 'cipher'])
     with Manager() as manager:
         if progress_queue is None:
@@ -173,6 +177,14 @@ def manage_sample_data(cipher_names=None, num_samples=1500, sample_length=500, m
         data_generated = True
         # Generate new dataset
         all_ciphers = ciphers._get_cipher_functions()
+        cipher_dict = {cipher.__name__: cipher for cipher in all_ciphers}
+        cipher_funcs = []
+        for cipher_name in cipher_names:
+            if cipher_name in cipher_dict:
+                cipher_funcs.append(cipher_dict[cipher_name])
+            else:
+                print(f"Warning: Cipher function '{cipher_name}' not found in available ciphers.")       
+
         cipher_funcs = [cipher for cipher in all_ciphers if cipher.__name__ in cipher_names]
 
         df = generate_batches_parallel(cipher_funcs, num_samples, sample_length)
@@ -190,7 +202,7 @@ def manage_sample_data(cipher_names=None, num_samples=1500, sample_length=500, m
             "sample_length": sample_length,
             "hash": file_hash(filename),
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
+        }
         with open(metadata_file, "w") as file:
             json.dump(metadata, file, indent=4)
     cleanup_metadata()

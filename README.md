@@ -65,4 +65,20 @@ ROADMAP: Add more classical ciphers. Tack on an attention layer in place. Eventu
 
 You can play with a subset of the collected data [here](https://brownbat.pythonanywhere.com/).
 
-So far I've been surprised with how nonlinearly performance responds to different hyperparameters, there's not one you can just crank and always get better results, they are all very interdependent. This may indicate that there's high sensitivity to initial conditions, possibly heavily dependent on randomness like how the samples are divided into training and validation sets or something similar.
+**Findings**
+Performance is extremely nonlinear to different hyperparameters. There's not one you can just crank or set and forget and always get better results, they are all very interdependent. This may indicate that there's high sensitivity to initial conditions, possibly heavily dependent on randomness like how the samples are divided into training and validation sets or something similar.
+
+To test: how much variance is there between runs with the same settings?
+
+It's easy to get to 99% accuracy distinguishing english, random, substitution, columnar, and vigenere. (So chosen so that it recognizes ciphers as neither pure english nor noise, and also distinguishes between substitution and transposition. Adding a mix of substitution and transposition or more diffusion may stump the guesser.)
+
+Adding several other ciphers, even if they aren't very complex, seems to make it hard to learn anything at all. One run it figured out how to distinguish playfair from the others, but was still comlpetely guessing even with english or random noise samples. I'm surprised how rare it is to develop some model for English, start getting that right out of the gate, then slowly get the harder ones, it seems to prefer to have a fully worked out theory before it leaves the safety of random guessing. (Humans seem more content with using very bad theories as stepping stones to better ones.)
+
+I haven't used feature engineering yet, big shortfall. What happens if I tag these with frequencies? IoCs?
+
+System can quickly and easily train a model to distinguish between vigenere encoded with different keys, and I don't think it's decrypting then checking if the output is english. 
+This includes keypairs with small internal misspellings, such as 'palimpsest' and 'palinpsest'
+That's... weird right? Plaintext is still random samples of English, so the mathematical patterns shouldn't be completely trivial. (Most vigenere attacks rely on some kind of periodicity of frequency anaylsis... is it doing that much? That's a lot of operations to string together before there's value to extract, so that's either notable that it would be reconstructing such a system (through some kind of weird leaps of faith?) or it would also be notable if it saw some much more direct and accessible pattern amateur solvers have simply missed over the years.) It would be interesting to try some interpetability experiments here.
+
+Larger dimensions have led to overheating on a radeon 7900 xtx with rocm 5.6 and even a bit on 5.7. I am hoping that AMD updates will continue to address this.
+

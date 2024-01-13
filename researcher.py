@@ -16,6 +16,7 @@ print(f"Using versions {torch.__version__}")
 import signal
 import time
 
+
 # TODO duplication checks are very slow.
 # look at speed throughout
 # todo -- periodically sleep to cool down?
@@ -36,22 +37,24 @@ should_continue = True
 # it only had 55.7 accuracy, but we get 
 # 96 accuracy from {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.1, 'learning_rate': 0.003}
 
+# TODO -- INVESTIGATE
+# Overheating with {'epochs': 60, 'num_layers': 128, 'batch_size': 128, 'embedding_dim': 64, 'hidden_dim': 512, 'dropout_rate': 0.3, 'learning_rate': 0.004}
+# No overheating with {'epochs': 45, 'num_layers': 64, 'batch_size': 64, 'embedding_dim': 32, 'hidden_dim': 256, 'dropout_rate': 0.3, 'learning_rate': 0.003}
+
 
 # set these parameters with alternatives to run combination of all alternatives
 params = {
-        'ciphers': [['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise']],
-        'num_samples': [10000],
+        'ciphers': [_get_cipher_names()],
+        'num_samples': [100000],
         'sample_length': [500],
-        'epochs': [30],
-        'num_layers': [2, 4, 16, 32, 64],
-        'batch_size': [64, 128],
-        'embedding_dim': [64, 128],
-        'hidden_dim': [256, 512],
-        'dropout_rate': [0.2, 0.3],
-        'learning_rate': [0.002, 0.003]
-    }
-# params = {}
-
+        'epochs': [45],
+        'num_layers': [64],
+        'batch_size': [64],
+        'embedding_dim': [32],
+        'hidden_dim': [256],
+        'dropout_rate': [0.3],
+        'learning_rate': [0.003]
+}
 
 def safe_json_load(file_path):
     try:
@@ -241,8 +244,9 @@ def run_experiment(exp):
 
     # Append timestamp to the experiment ID for uniqueness
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
     data = get_data(data_params)
+    
+    
     print(f"Running experiment: {exp['experiment_id']}...")
     model, metrics = train_model(data, hyperparams)
     exp['metrics'] = convert_ndarray_to_list(metrics)
@@ -443,6 +447,7 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
     print(settings)
     print()
 
+    # TODO: change defaults to lists to avoid nonlist check
     default_params = {
         'num_samples': 1000,
         'sample_length': 200,
@@ -518,7 +523,7 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
 def main():
     global should_continue
     global params
-    build_cm_gifs = False
+    build_cm_gifs = True
 
     signal.signal(signal.SIGINT, signal_handler)
 
@@ -578,8 +583,8 @@ def main():
     elif build_cm_gifs:
         # Plot confusion matrices for the new experiments
         # TODO: just plot for the best performer of the batch?
-        # plot_confusion_matrices()
-        pass  # do not plot, it's too slow
+        plot_confusion_matrices()
+
 
     print("Cleaning up files")
     clean_up_files(test_mode=False)
