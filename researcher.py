@@ -16,21 +16,10 @@ print(f"Using versions {torch.__version__}")
 import signal
 import time
 
-
 # TODO duplication checks are very slow.
 # look at speed throughout
-# todo -- periodically sleep to cool down?
-# todo -- sleep and periodically scan a file in the directory to find params for more experiments to run?
 # todo -- add additional ciphers, such as ADFGVX, trifid, VIC, enigma, railfence
 # move from LSTM to transformers
-
-# set file location as working directory
-dir_path = os.path.dirname(os.path.realpath(__file__))
-os.chdir(dir_path)
-
-# Global flag and queue for communication
-should_continue = True
-
 # TODO -- INVESTIGATE
 # why is {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.2, 'learning_rate': 0.001}
 # so awful compared to neighbors? random bad luck on dropout? re-run
@@ -40,20 +29,34 @@ should_continue = True
 # TODO -- INVESTIGATE
 # Overheating with {'epochs': 60, 'num_layers': 128, 'batch_size': 128, 'embedding_dim': 64, 'hidden_dim': 512, 'dropout_rate': 0.3, 'learning_rate': 0.004}
 # No overheating with {'epochs': 45, 'num_layers': 64, 'batch_size': 64, 'embedding_dim': 32, 'hidden_dim': 256, 'dropout_rate': 0.3, 'learning_rate': 0.003}
+# overheating seems tied to complexity, especially hidden_dim, suggesting vram issue - file bug?
 
+# bifid/playfair acts like it has an accuracy ceiling based on hidden dim
+# maybe each identification burns x layers of hidden dim...
+# well, can distinguish at ~93%, always some mistakes. adding english and noise and the whole thing collapses, no learning
+# maybe reward too small when four categories...
+
+# investigate - each pair of ciphers for accuracy, then each triplet
+
+# set file location as working directory
+dir_path = os.path.dirname(os.path.realpath(__file__))
+os.chdir(dir_path)
+
+# Global flag and queue for communication
+should_continue = True
 
 # set these parameters with alternatives to run combination of all alternatives
 params = {
-        'ciphers': [_get_cipher_names()],
-        'num_samples': [100000],
-        'sample_length': [500],
-        'epochs': [45],
-        'num_layers': [64],
-        'batch_size': [64],
-        'embedding_dim': [32],
-        'hidden_dim': [256],
-        'dropout_rate': [0.3],
-        'learning_rate': [0.003]
+    'ciphers': [["bifid", "playfair", "english", "random_noise"]],
+    'num_samples': [10000],
+    'sample_length': [500],
+    'epochs': [30],
+    'num_layers': [128],
+    'batch_size': [64],
+    'embedding_dim': [32],
+    'hidden_dim': [512],
+    'dropout_rate': [0.3],
+    'learning_rate': [0.02]
 }
 
 def safe_json_load(file_path):
