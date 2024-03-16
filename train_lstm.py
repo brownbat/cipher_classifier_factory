@@ -271,9 +271,9 @@ def train_model(data, hyperparams):
     for epoch in range(epochs):
         torch.cuda.empty_cache()
         gc.collect()  # add explicit garbage collection to prevent memory leaks
-        while get_gpu_temp() > 102:  # to address runaway heating issues on rocm5.6 that seem to have been resolved in rocm5.7
-            print("WARNING: High GPU Temp!")
-            time.sleep(20)
+        # ~ while get_gpu_temp() > 102:  # to address runaway heating issues on rocm5.6 that seem to have been resolved in rocm5.7
+            # ~ print("WARNING: High GPU Temp!")
+            # ~ time.sleep(20)
         model.train()
         train_loss = 0
         correct_predictions = 0

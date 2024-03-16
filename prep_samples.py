@@ -191,7 +191,12 @@ def manage_sample_data(cipher_names=None, num_samples=1500, sample_length=500, m
         df.columns = df.columns.map(str)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"data/feathers/{timestamp}.feather"
+
+        feathers_directory = "data/feathers"
+        if not os.path.exists(feathers_directory):
+            os.makedirs(feathers_directory)
+        
+        filename = f"{feathers_directory}/{timestamp}.feather"
         df.to_feather(filename)
 
         # Update metadata
