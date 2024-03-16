@@ -53,15 +53,15 @@ should_continue = True
 # set these parameters with alternatives to run combination of all alternatives
 params = {
     'ciphers': [_get_cipher_names()],
-    'num_samples': [25000],
+    'num_samples': [1000000],
     'sample_length': [500],
     'epochs': [30],
-    'num_layers': [64],
-    'batch_size': [64],
+    'num_layers': [128],
+    'batch_size': [128],
     'embedding_dim': [32],
-    'hidden_dim': [256],
-    'dropout_rate': [0.3],
-    'learning_rate': [0.003]
+    'hidden_dim': [512],
+    'dropout_rate': [0.5],
+    'learning_rate': [0.004]
 }
 
 def safe_json_load(file_path):
@@ -135,6 +135,8 @@ def plot_confusion_matrices(file_path='data/completed_experiments.json'):
                 plt.title(title)
                 
                 frame_filename = f"data/cm/tmp_frame_{epoch}.png"
+                frame_dir = os.path.dirname(frame_filename)
+                os.makedirs(frame_dir, exist_ok=True)  # make directory if it does not exist
                 plt.savefig(frame_filename, bbox_inches='tight')
                 frames.append(frame_filename)
                 plt.close()

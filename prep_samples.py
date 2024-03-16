@@ -193,8 +193,7 @@ def manage_sample_data(cipher_names=None, num_samples=1500, sample_length=500, m
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         feathers_directory = "data/feathers"
-        if not os.path.exists(feathers_directory):
-            os.makedirs(feathers_directory, exist_ok=True)
+        os.makedirs(feathers_directory, exist_ok=True)
         
         filename = f"{feathers_directory}/{timestamp}.feather"
         df.to_feather(filename)
