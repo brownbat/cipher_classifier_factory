@@ -267,6 +267,8 @@ def run_experiment(exp):
     print(f"  now called: {exp['uid']}")
     
     model_filename = f'data/models/{unique_id}.pt'
+    model_dir = os.path.dirname(model_filename)
+    os.makedirs(model_dir, exist_ok=True) # create directory if it doesn't exist
     exp['model_filename'] = model_filename
     torch.save(model.state_dict(), model_filename)
 
