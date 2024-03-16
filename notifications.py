@@ -10,14 +10,23 @@ FILE_PATH = 'credentials.json'
 def get_credentials(f_path=None):
     if f_path is None:
         f_path = FILE_PATH
-    with open(f_path, 'r') as file:
-        credentials = json.load(file)
-    return credentials
+    try:
+        with open(f_path, 'r') as file:
+            credentials = json.load(file)
+        return credentials
+    except FileNotFoundError:
+        print(f"WARNING: Credentials file not found at {f_path}. Notifications will not be sent.")
+        return None
 
 
 def send_email(message=None, test=False):
     current_time = time.ctime(time.time())
     credentials = get_credentials('credentials.json')
+
+    if credentials is None:
+        return  # exit the functino early if no credentials
+
+    
     email = credentials['email']
     password = credentials['password']
     sender = email
@@ -50,7 +59,9 @@ def send_discord_notification(message):
         "username": "Cipher Classifier"
     }
 
-    credentials = get_credentials()
+    credentials = get_credentials('credentials.json')
+    if credentials is None:
+        return  # exit the functino early if no credentials
     webhook = credentials['webhook']
 
     try:
