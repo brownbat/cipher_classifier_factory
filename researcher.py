@@ -50,6 +50,20 @@ os.chdir(dir_path)
 # Global flag and queue for communication
 should_continue = True
 
+# set these parameters with alternatives to run combination of all alternatives
+params = {
+    'ciphers': [_get_cipher_names()],
+    'num_samples': [25000],
+    'sample_length': [500],
+    'epochs': [30],
+    'num_layers': [64],
+    'batch_size': [64],
+    'embedding_dim': [32],
+    'hidden_dim': [256],
+    'dropout_rate': [0.3],
+    'learning_rate': [0.003]
+}
+
 def safe_json_load(file_path):
     try:
         with open(file_path, 'r') as file:
@@ -65,7 +79,6 @@ def safe_json_load(file_path):
             json.dump([], file)
         return []
 
-params = safe_json_load('data/config.json')
 
 def signal_handler(sig, frame):
     global should_continue
