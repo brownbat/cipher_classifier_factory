@@ -29,6 +29,7 @@ import time
 # TODO -- INVESTIGATE
 # Overheating with {'epochs': 60, 'num_layers': 128, 'batch_size': 128, 'embedding_dim': 64, 'hidden_dim': 512, 'dropout_rate': 0.3, 'learning_rate': 0.004}
 # No overheating with {'epochs': 45, 'num_layers': 64, 'batch_size': 64, 'embedding_dim': 32, 'hidden_dim': 256, 'dropout_rate': 0.3, 'learning_rate': 0.003}
+# overheating with num_samples 1,000,000, not with 10,000
 # overheating seems tied to complexity, especially hidden_dim, suggesting vram issue - file bug?
 
 # bifid/playfair acts like it has an accuracy ceiling based on hidden dim
@@ -37,6 +38,10 @@ import time
 # maybe reward too small when four categories...
 
 # investigate - each pair of ciphers for accuracy, then each triplet
+# investigate -- possibly just vastly underestimated req'd data, as 50k samples works really well on
+# distinguishing playfair and bifid when 10k struggled.
+
+# add option to run same experiment multiple times, generating fresh data or using consistent seed
 
 # set file location as working directory
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -47,16 +52,16 @@ should_continue = True
 
 # set these parameters with alternatives to run combination of all alternatives
 params = {
-    'ciphers': [["bifid", "playfair", "english", "random_noise"]],
-    'num_samples': [10000],
+    'ciphers': [_get_cipher_names()],
+    'num_samples': [25000],
     'sample_length': [500],
     'epochs': [30],
-    'num_layers': [128],
+    'num_layers': [64],
     'batch_size': [64],
     'embedding_dim': [32],
-    'hidden_dim': [512],
+    'hidden_dim': [256],
     'dropout_rate': [0.3],
-    'learning_rate': [0.02]
+    'learning_rate': [0.003]
 }
 
 def safe_json_load(file_path):

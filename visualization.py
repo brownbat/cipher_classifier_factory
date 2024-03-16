@@ -22,6 +22,8 @@ import json
 # allow user to designate which metrics are sliders and which are x/y and which are simply ignored
 # display in a text box somewhere those other metrics
 
+# run some experiments repeatedly for percentage success?
+
 
 USE_MAIN_DATASET = False  # restrict to only the main completed_experiments.json file, rather than pulling in every historical .json
 
