@@ -246,11 +246,8 @@ def run_experiment(exp):
     data_params = exp.get('data_params', {})
     hyperparams = exp.get('hyperparams', {})
 
-    # TODO - Isolate unusual bug where num_samples is sometimes missing from recorded experiments
-    # DEBUG - Check if 'num_samples' is missing in data_params
     if 'num_samples' not in data_params:
         raise ValueError(f"'num_samples' is missing in data_params for experiment {exp.get('experiment_id')}")
-
 
     # Append timestamp to the experiment ID for uniqueness
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

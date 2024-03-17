@@ -138,46 +138,6 @@ def create_data_loaders(X, y, batch_size=BATCH_SIZE, validation_split=0.2):
     
     return train_loader, val_loader
 
-# WARNING: activation functions are implied by this model and by crossentropy
-# and should not be specified
-def is_valid_activation_function(func):
-    # List of known PyTorch activation function classes
-    valid_activation_funcs = [nn.ReLU, nn.GELU, nn.Sigmoid, nn.Tanh, nn.SiLU]
-    return any(isinstance(func, cls) for cls in valid_activation_funcs)
-
-
-# WARNING: activation functions are implied by this model and by crossentropy
-# and should not be specified
-def get_activation_function(activation_input):
-    """
-    Returns the PyTorch activation function based on the input.
-    If a string is provided, it maps to the corresponding activation function.
-    If a callable is provided, it returns the callable directly.
-
-    Args:
-    - activation_input (str or callable): The name of the activation function or
-    the activation function itself.
-
-    Returns:
-    - activation_func (callable): The PyTorch activation function.
-    """
-    if callable(activation_input):
-        if is_valid_activation_function(activation_input):
-            return activation_input
-        else:
-            raise ValueError(
-                "Invalid activation function or unrecognized "
-                + "function name.")
-    activation_functions = {
-        'relu': nn.ReLU(),
-        'gelu': nn.GELU(),
-        'sigmoid': nn.Sigmoid(),
-        'tanh': nn.Tanh(),
-        'swish': nn.SiLU(),  # Swish is known as SiLU in PyTorch
-        # Add more activations if needed
-    }
-    return activation_functions.get(activation_input.lower(), None)
-
 
 def get_gpu_temp():
     process = subprocess.Popen(["sensors"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -221,12 +181,6 @@ def train_model(data, hyperparams):
     # ok vocab size can be a default it's basically fixed
     vocab_size = hyperparams.get('vocab_size', 27)
     num_classes = len(np.unique(data['cipher']))
-
-    # WARNING: activation functions are implied by this model and by crossentropy
-    # and should not be specified
-
-    # activation_name = hyperparams.get('activation_func', None)
-    # activation_func = get_activation_function(activation_name)
 
     # Preprocess data
     X, y, token_dict, label_encoder = load_and_preprocess_data(data)
@@ -359,117 +313,6 @@ def conf_matrix_to_gif(conf_matrices, filename='confusion_matrices.gif', duratio
             plt.close(fig)
 
 
-def save_model(
-        model, token_dict, label_encoder, params, hyperparams,
-        training_metrics, metadata_file="model/model_metadata.json"):
-    # Generate unique identifier for the model
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_id = f"model_{timestamp}"
-    model_filename = f"data/models/{model_id}.pth"
-
-    # Save the model
-    torch.save(model.state_dict(), model_filename)
-
-    # Save token dictionary and label encoder as JSON
-    token_dict_filename = f"data/models/{model_id}_token_dict.json"
-    label_encoder_filename = f"data/models/{model_id}_label_encoder.json"
-
-    with open(token_dict_filename, 'w') as file:
-        json.dump(token_dict, file)
-
-    label_mapping = dict(zip(
-        label_encoder.classes_,
-        label_encoder.transform(label_encoder.classes_)))
-    with open(label_encoder_filename, 'w') as file:
-        json.dump(label_mapping, file)
-
-    # Calculate file hash for model
-    model_hash = file_hash(model_filename)
-
-    # Load or initialize metadata
-    if not os.path.exists(metadata_file) or os.stat(metadata_file).st_size == 0:
-        metadata = {}
-    else:
-        with open(metadata_file, "r") as file:
-            metadata = json.load(file)
-
-    # Update metadata with new model details and file hashes
-    metadata[model_id] = {
-        "filename": model_filename,
-        "token_dict": token_dict_filename,
-        "label_encoder": label_encoder_filename,
-        "model_hash": model_hash,
-        "params": params,
-        "hyperparams": hyperparams,
-        "training_metrics": training_metrics,
-        "timestamp": timestamp
-    }
-
-    with open(metadata_file, "w") as file:
-        json.dump(metadata, file, indent=4)
-
-    cleanup_model_metadata(metadata_file)
-    return model_filename
-
-
-def load_model(model_id, metadata_file="model/model_metadata.json"):
-    cleanup_model_metadata(metadata_file)
-
-    # Load metadata
-    with open(metadata_file, "r") as file:
-        metadata = json.load(file)
-
-    if model_id in metadata:
-        model_filename = metadata[model_id]["filename"]
-        token_dict_filename = metadata[model_id]["token_dict"]
-        label_encoder_filename = metadata[model_id]["label_encoder"]
-
-        # Load token dictionary and label encoder
-        with open(token_dict_filename, 'r') as file:
-            token_dict = json.load(file)
-
-        with open(label_encoder_filename, 'r') as file:
-            label_mapping = json.load(file)
-            # Logic to reconstruct label encoder from label_mapping
-            label_encoder = LabelEncoder()
-            label_encoder.classes_ = np.array(list(label_mapping.keys()))
-
-        # Reconstruct and load the model
-        # This step assumes you have the architecture details in metadata
-        # Example:
-        # embedding_dim = metadata[model_id]["hyperparams"]["embedding_dim"]
-        # hidden_dim = metadata[model_id]["hyperparams"]["hidden_dim"]
-        # num_classes = len(label_encoder.classes_)
-        # model = LSTMClassifier(VOCAB_SIZE, embedding_dim, hidden_dim,
-        #    num_classes)
-        # model.load_state_dict(torch.load(model_filename))
-
-        return model, token_dict, label_encoder
-    else:
-        raise FileNotFoundError(f"No model found with ID: {model_id}")
-
-
-def cleanup_model_metadata(metadata_file="data/models/model_metadata.json"):
-    """Synchronizes the model metadata file with the actual model files in the
-    directory."""
-    if not os.path.exists(metadata_file):
-        print("Model metadata file not found.")
-        return
-
-    with open(metadata_file, "r") as file:
-        metadata = json.load(file)
-
-    valid_metadata = {}
-    for model_id, info in metadata.items():
-        if os.path.exists(info["filename"]):
-            valid_metadata[model_id] = info
-
-    with open(metadata_file, "w") as file:
-        json.dump(valid_metadata, file, indent=4)
-
-    print("Model metadata cleanup complete.")
-
-
 def classify_text(model, text, token_dict, label_encoder):
     """
     Classifies the given text using the trained LSTM model.
@@ -529,34 +372,6 @@ def get_data(params):
     data = pd.read_feather(filename)
 
     return data
-
-
-def run_training_experiment(params, hyperparams):
-    """
-    Orchestrates the training of an LSTM model, generating and saving necessary
-    data, saves the model, and manages metadata.
-
-    Args:
-    - params (dict): Dictionary containing parameters for data generation and
-    model configuration.
-    - hyperparams (dict): Dictionary containing hyperparameters for model
-    training.
-
-    Returns:
-    - model_path (str): File path to the saved model.
-    - training_metrics (dict): Metrics and stats from the training process.
-    """
-
-    # Ensure data is ready
-    data = get_data(params)
-
-    # Train the model
-    model, training_metrics = train_model(data, hyperparams)
-
-    # Save the model and manage metadata
-    model_path = save_model(model, params, hyperparams, training_metrics)
-
-    return model_path, training_metrics
 
 
 def run_basic_tests():
