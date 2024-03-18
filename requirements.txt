@@ -5,4 +5,5 @@ imageio
 scikit-learn
 tqdm
 pyarrow
-
+bs4
+IPython

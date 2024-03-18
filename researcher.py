@@ -12,6 +12,12 @@ from train_lstm import train_model, get_data
 from ciphers import _get_cipher_names
 import torch
 print(f"Using versions {torch.__version__}")
+if torch.cuda.is_available():
+    print(f"CUDA is available")
+else:
+    print(f"CUDA is not available")
+print("Current CUDA device:")
+print(torch.cuda.get_device_name(0))
 
 import signal
 import time
