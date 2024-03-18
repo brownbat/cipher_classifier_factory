@@ -53,15 +53,15 @@ should_continue = True
 # set these parameters with alternatives to run combination of all alternatives
 params = {
     'ciphers': [_get_cipher_names()],
-    'num_samples': [25000],
+    'num_samples': [1000000],
     'sample_length': [500],
     'epochs': [30],
-    'num_layers': [32],
+    'num_layers': [32, 64],
     'batch_size': [256],
-    'embedding_dim': [64],
-    'hidden_dim': [192],
-    'dropout_rate': [0.2],
-    'learning_rate': [0.002]
+    'embedding_dim': [128, 256],
+    'hidden_dim': [192, 256],
+    'dropout_rate': [0.3],
+    'learning_rate': [0.003]
 }
 
 def safe_json_load(file_path):
