@@ -11,43 +11,34 @@ import imageio.v2 as imageio
 from train_lstm import train_model, get_data
 from ciphers import _get_cipher_names
 import torch
-print(f"Using versions {torch.__version__}")
-if torch.cuda.is_available():
-    print(f"CUDA is available")
-else:
-    print(f"CUDA is not available")
-print("Current CUDA device:")
-print(torch.cuda.get_device_name(0))
 
 import signal
 import time
+import argparse
 
-# TODO duplication checks are very slow.
 # look at speed throughout
 # todo -- add additional ciphers, such as ADFGVX, trifid, VIC, enigma, railfence
 # move from LSTM to transformers
-# TODO -- INVESTIGATE
+
+# TODO -- INVESTIGATE accuracy, overheating, crashes
+
+#   LOW ACCURACY
 # why is {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.2, 'learning_rate': 0.001}
 # so awful compared to neighbors? random bad luck on dropout? re-run
 # it only had 55.7 accuracy, but we get 
 # 96 accuracy from {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.1, 'learning_rate': 0.003}
 
-# TODO -- INVESTIGATE
+# add option to run same experiment multiple times, generating fresh data or using consistent seed
+
+#   OVERHEATING
 # Overheating with {'epochs': 60, 'num_layers': 128, 'batch_size': 128, 'embedding_dim': 64, 'hidden_dim': 512, 'dropout_rate': 0.3, 'learning_rate': 0.004}
 # No overheating with {'epochs': 45, 'num_layers': 64, 'batch_size': 64, 'embedding_dim': 32, 'hidden_dim': 256, 'dropout_rate': 0.3, 'learning_rate': 0.003}
 # overheating with num_samples 1,000,000, not with 10,000
 # overheating seems tied to complexity, especially hidden_dim, suggesting vram issue - file bug?
 
-# bifid/playfair acts like it has an accuracy ceiling based on hidden dim
-# maybe each identification burns x layers of hidden dim...
-# well, can distinguish at ~93%, always some mistakes. adding english and noise and the whole thing collapses, no learning
-# maybe reward too small when four categories...
+#   CRASHES
+# crashes at 100000 samples, batch 256, embedding 128, hidden 256
 
-# investigate - each pair of ciphers for accuracy, then each triplet
-# investigate -- possibly just vastly underestimated req'd data, as 50k samples works really well on
-# distinguishing playfair and bifid when 10k struggled.
-
-# add option to run same experiment multiple times, generating fresh data or using consistent seed
 
 # set file location as working directory
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -57,16 +48,16 @@ os.chdir(dir_path)
 should_continue = True
 
 # set these parameters with alternatives to run combination of all alternatives
-params = {
+default_params = {
     'ciphers': [_get_cipher_names()],
-    'num_samples': [100000],
+    'num_samples': [10000],
     'sample_length': [500],
     'epochs': [30],
-    'num_layers': [32, 64],
-    'batch_size': [256],
-    'embedding_dim': [128],
-    'hidden_dim': [256],
-    'dropout_rate': [0.4],
+    'num_layers': [64, 128],
+    'batch_size': [128],
+    'embedding_dim': [64],
+    'hidden_dim': [64, 128],
+    'dropout_rate': [0.2],
     'learning_rate': [0.004]
 }
 
@@ -535,13 +526,67 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
     print(f"{len(pending_keys)} total experiments to run.")
 
 
+def argument_parser(default_params):
+    parser = argparse.ArgumentParser(description="Generate LSTM models with various configurations.")
+    parser.add_argument('--ciphers', nargs='*', default='all', help="List of ciphers to use, such as 'vigenere' or 'caesar', or 'all' for all ciphers.")
+    parser.add_argument('--samples', nargs='*', type=int, default=None, help="Number of samples to generate.")
+    parser.add_argument('--sample_length', nargs='*', type=int, default=None, help="Length of samples to generate.")
+    parser.add_argument('--epochs', nargs='*', type=int, default=None, help="Number of epochs to train.")
+    parser.add_argument('--layers', nargs='*', type=int, default=None, help="Number of layers.")
+    parser.add_argument('--batch_size', nargs='*', type=int, default=None, help="Batch size.")
+    parser.add_argument('--embedding_dimensions', nargs='*', type=int, default=None, help="Embedding dimensions.")
+    parser.add_argument('--hidden_dimensions', nargs='*', type=int, default=None, help="Hidden dimensions.")
+    parser.add_argument('--dropout_rate', nargs='*', type=float, default=None, help="Dropout rate.")  # Changed to float for rates
+    parser.add_argument('--learning_rate', nargs='*', type=float, default=None, help="Learning rate.")  # Changed to float for rates
+
+    args = parser.parse_args()
+
+    # Copy default_params to avoid modifying the original
+    params = default_params.copy()
+
+    # Update params with command line arguments if provided
+    if args.ciphers is not None:
+        if args.ciphers == 'all':
+            params['ciphers'] = [_get_cipher_names()]
+        else:
+            params['ciphers'] = args.ciphers
+    if args.samples is not None:
+        params['num_samples'] = args.samples
+    if args.sample_length is not None:
+        params['sample_length'] = args.sample_length
+    if args.epochs is not None:
+        params['epochs'] = args.epochs
+    if args.layers is not None:
+        params['num_layers'] = args.layers
+    if args.batch_size is not None:
+        params['batch_size'] = args.batch_size
+    if args.embedding_dimensions is not None:
+        params['embedding_dim'] = args.embedding_dimensions
+    if args.hidden_dimensions is not None:
+        params['hidden_dim'] = args.hidden_dimensions
+    if args.dropout_rate is not None:
+        params['dropout_rate'] = args.dropout_rate
+    if args.learning_rate is not None:
+        params['learning_rate'] = args.learning_rate
+
+    return params
+
+
 def main():
     global should_continue
-    global params
+    global default_params
     build_cm_gifs = True
+    params = argument_parser(default_params)
+
+    print(f"Using torch version {torch.__version__}")
+    if torch.cuda.is_available():
+        print(f"CUDA is available")
+    else:
+        print(f"CUDA is not available")
+    print("Current CUDA device:")
+    print(torch.cuda.get_device_name(0))
 
     signal.signal(signal.SIGINT, signal_handler)
-
     generate_experiments(params)
 
     # Run experiments from the pending file
