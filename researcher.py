@@ -18,6 +18,9 @@ import argparse
 
 # look at speed throughout
 # todo -- add additional ciphers, such as ADFGVX, trifid, VIC, enigma, railfence
+# implement early stopping
+# adjust visualizations.py to focus on higher sample count experiments
+# clean completed_experiments.json of low sample count experiments
 # move from LSTM to transformers
 
 # TODO -- INVESTIGATE accuracy, overheating, crashes
@@ -53,15 +56,15 @@ should_continue = True
 # set these parameters with alternatives to run combination of all alternatives
 default_params = {
     'ciphers': [_get_cipher_names()],
-    'num_samples': [10000],
+    'num_samples': [100000],
     'sample_length': [500],
     'epochs': [30],
     'num_layers': [64, 128],
-    'batch_size': [128],
-    'embedding_dim': [64],
-    'hidden_dim': [64, 128],
+    'batch_size': [32, 64],
+    'embedding_dim': [128, 192],
+    'hidden_dim': [128, 192],
     'dropout_rate': [0.2],
-    'learning_rate': [0.004]
+    'learning_rate': [0.003, 0.004]
 }
 
 def safe_json_load(file_path):
