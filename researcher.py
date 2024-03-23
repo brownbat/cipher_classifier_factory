@@ -39,6 +39,8 @@ import argparse
 #   CRASHES
 # crashes at 100000 samples, batch 256, embedding 128, hidden 256
 
+# try: python3 researcher.py --num_samples 1000000 --num_layers 256 --batch_size 256 --embedding_dim 512 --hidden_dim 512
+
 
 # set file location as working directory
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -529,13 +531,13 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
 def argument_parser(default_params):
     parser = argparse.ArgumentParser(description="Generate LSTM models with various configurations.")
     parser.add_argument('--ciphers', nargs='*', default='all', help="List of ciphers to use, such as 'vigenere' or 'caesar', or 'all' for all ciphers.")
-    parser.add_argument('--samples', nargs='*', type=int, default=None, help="Number of samples to generate.")
+    parser.add_argument('--num_samples', nargs='*', type=int, default=None, help="Number of samples to generate.")
     parser.add_argument('--sample_length', nargs='*', type=int, default=None, help="Length of samples to generate.")
     parser.add_argument('--epochs', nargs='*', type=int, default=None, help="Number of epochs to train.")
-    parser.add_argument('--layers', nargs='*', type=int, default=None, help="Number of layers.")
+    parser.add_argument('--num_layers', nargs='*', type=int, default=None, help="Number of layers.")
     parser.add_argument('--batch_size', nargs='*', type=int, default=None, help="Batch size.")
-    parser.add_argument('--embedding_dimensions', nargs='*', type=int, default=None, help="Embedding dimensions.")
-    parser.add_argument('--hidden_dimensions', nargs='*', type=int, default=None, help="Hidden dimensions.")
+    parser.add_argument('--embedding_dim', nargs='*', type=int, default=None, help="Embedding dimensions.")
+    parser.add_argument('--hidden_dim', nargs='*', type=int, default=None, help="Hidden dimensions.")
     parser.add_argument('--dropout_rate', nargs='*', type=float, default=None, help="Dropout rate.")  # Changed to float for rates
     parser.add_argument('--learning_rate', nargs='*', type=float, default=None, help="Learning rate.")  # Changed to float for rates
 
