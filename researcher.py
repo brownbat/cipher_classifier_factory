@@ -31,6 +31,7 @@ import argparse
 # so awful compared to neighbors? random bad luck on dropout? re-run
 # it only had 55.7 accuracy, but we get 
 # 96 accuracy from {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.1, 'learning_rate': 0.003}
+# why is 100k samples accuracy lower than recent 20k sample experiment accuracy
 
 # add option to run same experiment multiple times, generating fresh data or using consistent seed
 
@@ -223,22 +224,24 @@ def get_experiment_details(exp):
     details.append(f"Experiment ID: {exp.get('experiment_id', 'N/A')}")
     if 'model_filename' in exp:
         details.append(f"Model saved as: {exp['model_filename']}")
-    ciphers_used = ', '.join(exp.get('data_params', {}).get('ciphers', []))
+    data_params = exp.get('data_params', {})
+    ciphers_used = ', '.join(data_params.get('ciphers', []))
+    sample_length = data_params.get('sample_length', 'N/A')
+    num_samples = data_params.get('num_samples', 'N/A')
+
     details.append(f"Ciphers used: {ciphers_used}")
-    sample_length = exp.get('data_params', {}).get('sample_length', 'N/A')
-    num_samples = exp.get('data_params', {}).get('num_samples', 'N/A')
     details.append(f"Sample length: {sample_length}, Number of Samples: {num_samples}")
-    epochs = exp.get('hyperparams', {}).get('epochs', 'N/A')
-    details.append(f"Epochs: {epochs}")
 
     hyperparams = exp.get('hyperparams', {})
-    num_layers = hyperparams.get('num_layers', {}).get('num_layers', 'N/A')
-    batch_size = hyperparams.get('batch_size', {}).get('batch_size', 'N/A')
-    embedding_dim = hyperparams.get('embedding_dim', {}).get('embedding_dim', 'N/A')
-    hidden_dim = hyperparams.get('hidden_dim', {}).get('hidden_dim', 'N/A')
-    dropout_rate = hyperparams.get('dropout_rate', {}).get('dropout_rate', 'N/A')
-    learning_rate = hyperparams.get('learning_rate', {}).get('learning_rate', 'N/A')
-
+    epochs = hyperparams.get('epochs', 'N/A')
+    num_layers = hyperparams.get('num_layers', 'N/A')
+    batch_size = hyperparams.get('batch_size', 'N/A')
+    embedding_dim = hyperparams.get('embedding_dim', 'N/A')
+    hidden_dim = hyperparams.get('hidden_dim', 'N/A')
+    dropout_rate = hyperparams.get('dropout_rate', 'N/A')
+    learning_rate = hyperparams.get('learning_rate', 'N/A')
+ 
+    details.append(f"Epochs: {epochs}")
     details.append(f"Layers: {num_layers}")
     details.append(f"Batch size: {batch_size}")
     details.append(f"Embedding dimensions: {embedding_dim}")
