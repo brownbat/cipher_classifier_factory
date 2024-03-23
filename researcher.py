@@ -455,7 +455,7 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
 
     # TODO: change defaults to lists to avoid nonlist check
     default_params = {
-        'num_samples': 1000,
+        'num_samples': 10000,
         'sample_length': 200,
         'epochs': 3,
         'num_layers': 10,
@@ -550,20 +550,20 @@ def argument_parser(default_params):
             params['ciphers'] = [_get_cipher_names()]
         else:
             params['ciphers'] = args.ciphers
-    if args.samples is not None:
-        params['num_samples'] = args.samples
+    if args.num_samples is not None:
+        params['num_samples'] = args.num_samples
     if args.sample_length is not None:
         params['sample_length'] = args.sample_length
     if args.epochs is not None:
         params['epochs'] = args.epochs
-    if args.layers is not None:
-        params['num_layers'] = args.layers
+    if args.num_layers is not None:
+        params['num_layers'] = args.num_layers
     if args.batch_size is not None:
         params['batch_size'] = args.batch_size
-    if args.embedding_dimensions is not None:
-        params['embedding_dim'] = args.embedding_dimensions
-    if args.hidden_dimensions is not None:
-        params['hidden_dim'] = args.hidden_dimensions
+    if args.embedding_dim is not None:
+        params['embedding_dim'] = args.embedding_dim
+    if args.hidden_dim is not None:
+        params['hidden_dim'] = args.hidden_dim
     if args.dropout_rate is not None:
         params['dropout_rate'] = args.dropout_rate
     if args.learning_rate is not None:
