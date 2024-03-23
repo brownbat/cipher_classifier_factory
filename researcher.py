@@ -39,6 +39,7 @@ import argparse
 #   CRASHES
 # crashes at 100000 samples, batch 256, embedding 128, hidden 256
 
+# for debugging: 
 # try: python3 researcher.py --num_samples 1000000 --num_layers 256 --batch_size 256 --embedding_dim 512 --hidden_dim 512
 
 
