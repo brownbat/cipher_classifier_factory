@@ -22,6 +22,7 @@ import argparse
 # adjust visualizations.py to focus on higher sample count experiments
 # clean completed_experiments.json of low sample count experiments
 # move from LSTM to transformers
+# look at persistence of exp1/exp2... in naming convention, is it avoidable?
 
 # TODO -- INVESTIGATE accuracy, overheating, crashes
 
@@ -229,6 +230,20 @@ def get_experiment_details(exp):
     details.append(f"Sample length: {sample_length}, Number of Samples: {num_samples}")
     epochs = exp.get('hyperparams', {}).get('epochs', 'N/A')
     details.append(f"Epochs: {epochs}")
+
+    num_layers = exp.get('num_layers', {}).get('num_layers', 'N/A')
+    batch_size = exp.get('batch_size', {}).get('batch_size', 'N/A')
+    embedding_dim = exp.get('embedding_dim', {}).get('embedding_dim', 'N/A')
+    hidden_dim = exp.get('hidden_dim', {}).get('hidden_dim', 'N/A')
+    dropout_rate = exp.get('dropout_rate', {}).get('dropout_rate', 'N/A')
+    learning_rate = exp.get('learning_rate', {}).get('learning_rate', 'N/A')
+
+    details.append(f"Layers: {num_layers}")
+    details.append(f"Batch size: {batch_size}")
+    details.append(f"Embedding dimensions: {embedding_dim}")
+    details.append(f"Hidden dimensions: {hidden_dim}")
+    details.append(f"Dropout rate: {dropout_rate}")
+    details.append(f"Learning rate: {learning_rate}")
 
     metrics = exp.get('metrics', {})
     if metrics:
@@ -621,11 +636,9 @@ def main():
         experiment_details += f"\n{num_completed} experiments completed, {num_pending} remaining\n"
         print("***")
         print(experiment_details)
-        print("EXP:")
-        print(exp['hyperparams'])
         print("***")
 
-        notification_msg = "Training experiment completed"
+        notification_msg = "Training experiment completed\n"
         notification_msg += experiment_details
         notifications.send_discord_notification(notification_msg)
 
