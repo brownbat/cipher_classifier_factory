@@ -25,6 +25,12 @@ Researcher will first generate these combinations and populate "pending_experime
 
 Then the experiments will be run in turn, filling in metrics for later analysis.
 
+Other features
+
+- For analysis of results, the system will generate confidence matrices and also can build a visualization of completed experiments using flask using visualization.py, which will host the visualization locally.
+- query_model.py lets you categorize text samples using the five top performing models you've generated, to compare their results in the wild.
+- The system can send notifications to you when it completes individual experiments using discord or email if you provide details to notifications.py.
+
 You can set parameters using the default_parameters dictionary at the top of researcher.py or through command line arguments.
 
 ROADMAP: Add more classical ciphers. Implement transformers.
