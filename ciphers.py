@@ -5,6 +5,8 @@ import inspect
 import itertools
 
 
+# TODO add ADFGVX, trifid, VIC, enigma, railfence
+
 def _get_cipher_functions():
     """
     Retrieves cipher functions from this module, excluding helper

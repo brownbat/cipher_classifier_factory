@@ -16,6 +16,8 @@ import signal
 import time
 import argparse
 
+# Note issue at https://github.com/ROCm/ROCm/issues/2808
+
 # look at speed throughout
 # todo -- add additional ciphers, such as ADFGVX, trifid, VIC, enigma, railfence
 # implement early stopping
@@ -42,7 +44,8 @@ import argparse
 # overheating seems tied to complexity, especially hidden_dim, suggesting vram issue - file bug?
 
 #   CRASHES
-# crashes at 100000 samples, batch 256, embedding 128, hidden 256
+# 100000 samples, batch 256, embedding 128, hidden 256
+# 100000 samples, num_layers: 128, batch_size: 32, embedding_dim: 32, hidden_dim: 512
 
 # for debugging: 
 # try: python3 researcher.py --num_samples 1000000 --num_layers 256 --batch_size 256 --embedding_dim 512 --hidden_dim 512
@@ -61,12 +64,12 @@ default_params = {
     'num_samples': [100000],
     'sample_length': [500],
     'epochs': [30],
-    'num_layers': [64, 128],
-    'batch_size': [32, 64],
-    'embedding_dim': [128, 192],
-    'hidden_dim': [128, 192],
+    'num_layers': [128],
+    'batch_size': [32],
+    'embedding_dim': [32],
+    'hidden_dim': [1024],
     'dropout_rate': [0.2],
-    'learning_rate': [0.003, 0.004]
+    'learning_rate': [0.002]
 }
 
 def safe_json_load(file_path):
@@ -637,10 +640,12 @@ def main():
             
         updated_exp = run_experiment(exp)
         experiment_details = get_experiment_details(updated_exp)
-        experiment_details += f"\n{num_completed} experiments completed, {num_pending} remaining\n"
+        num_completed += 1
+        num_pending -= 1
+        experiment_details += f"\n{num_completed} experiments completed, {num_pending} remaining"
         print("***")
         print(experiment_details)
-        print("***")
+        print("***\n")
 
         notification_msg = "Training experiment completed\n"
         notification_msg += experiment_details
