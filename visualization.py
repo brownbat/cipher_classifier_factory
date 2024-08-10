@@ -437,12 +437,12 @@ def load_data():
         'num_samples': [100000],
         'sample_length': [500],
         'epochs': [30],
-        # 'num_layers': [32, 64, 128],
-        # 'batch_size': [64, 128, 256],
-        # 'embedding_dim': [32, 64, 128],
-        # 'hidden_dim': [192, 256, 512],
-        # 'dropout_rate': [0.1, 0.2, 0.3],
-        # 'learning_rate': [0.001, 0.002, 0.003]
+        'num_layers': [64, 128, 256],
+        'batch_size': [16, 32, 64],
+        'embedding_dim': [16, 32, 64],
+        'hidden_dim': [128, 256, 512],
+        'dropout_rate': [0.1, 0.2, 0.3],
+        'learning_rate': [0.002, 0.003, 0.004]
     }
     data = filter_experiments(data, params)
     return data

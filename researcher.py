@@ -16,7 +16,8 @@ import signal
 import time
 import argparse
 
-# Note issue at https://github.com/ROCm/ROCm/issues/2808
+# note bug where loss can diverge to infinity/NaN
+# see https://stackoverflow.com/questions/40050397/deep-learning-nan-loss-reasons
 
 # look at speed throughout
 # todo -- add additional ciphers, such as ADFGVX, trifid, VIC, enigma, railfence
@@ -61,16 +62,17 @@ should_continue = True
 # set these parameters with alternatives to run combination of all alternatives
 default_params = {
     'ciphers': [_get_cipher_names()],
-    'num_samples': [100000],
+    'num_samples': [1000000],
     'sample_length': [500],
-    'epochs': [30],
+    'epochs': [60],
     'num_layers': [128],
     'batch_size': [32],
     'embedding_dim': [32],
-    'hidden_dim': [1024],
-    'dropout_rate': [0.2],
-    'learning_rate': [0.002]
+    'hidden_dim': [256, 512],
+    'dropout_rate': [0.2, 0.3],
+    'learning_rate': [0.004]
 }
+
 
 def safe_json_load(file_path):
     try:

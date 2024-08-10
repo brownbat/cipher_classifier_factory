@@ -37,6 +37,7 @@ BATCH_SIZE = 32
 EMBEDDING_DIM = 128
 HIDDEN_DIM = 128
 VOCAB_SIZE = 27
+EPSILON = 1e-7
 
 
 # Define LSTM Model
@@ -171,6 +172,8 @@ def train_model(data, hyperparams):
     - training_metrics (dict): Metrics and stats from the training process,
         like loss and accuracy.
     """
+
+    
     # Extract hyperparameters - NO DEFAULTS, must be fully specified
     epochs = hyperparams['epochs']
     learning_rate = hyperparams['learning_rate']
@@ -208,11 +211,15 @@ def train_model(data, hyperparams):
 
     # Move model to GPU if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs")
+        model = nn.DataParallel(model)
     model.to(device)
 
     # Training setup
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.5)
     training_metrics = {
         'train_loss': [],
         'val_loss': [],
@@ -225,9 +232,7 @@ def train_model(data, hyperparams):
     for epoch in range(epochs):
         torch.cuda.empty_cache()
         gc.collect()  # add explicit garbage collection to prevent memory leaks
-        # ~ while get_gpu_temp() > 102:  # to address runaway heating issues on rocm5.6 that seem to have been resolved in rocm5.7
-            # ~ print("WARNING: High GPU Temp!")
-            # ~ time.sleep(20)
+
         model.train()
         train_loss = 0
         correct_predictions = 0
@@ -238,17 +243,17 @@ def train_model(data, hyperparams):
                 desc=f'Epoch {epoch+1}/{epochs} - Training'):
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
-            logits = model(inputs)  # Get logits
+            logits = model(inputs)
+            logits = torch.clamp(logits, min=EPSILON, max =1-EPSILON)
+            
             loss = criterion(logits, labels)
             loss.backward()
+
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
             optimizer.step()
             train_loss += loss.item()
-
-            probabilities = model(inputs)  # Get probabilities for accuracy calculation
-            _, predicted = torch.max(probabilities.data, 1)
-            correct_predictions += (predicted == labels).sum().item()
-            all_predictions.extend(predicted.tolist())
-            all_true_labels.extend(labels.tolist())
 
         # Validation phase
         model.eval()
@@ -262,12 +267,12 @@ def train_model(data, hyperparams):
                     desc=f'Epoch {epoch+1}/{epochs} - Validation'):
                 inputs, labels = inputs.to(device), labels.to(device)
                 logits = model(inputs)  # Get logits
+                logits = torch.clamp(logits, min=EPSILON, max=1-EPSILON)
                 loss = criterion(logits, labels)
                 val_loss += loss.item()
 
-
                 # Calculate accuracy
-                probabilities = model(inputs)
+                probabilities = torch.softmax(logits, dim=1)
                 _, predicted = torch.max(probabilities.data, 1)
                 correct_predictions += (predicted == labels).sum().item()
                 all_predictions.extend(predicted.tolist())
@@ -277,16 +282,24 @@ def train_model(data, hyperparams):
         conf_matrix = confusion_matrix(all_true_labels, all_predictions)
 
         # Record training and validation loss
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
         training_metrics['train_loss'].append(train_loss / len(train_loader))
         training_metrics['val_loss'].append(val_loss / len(val_loader))
         training_metrics['val_accuracy'].append(val_accuracy)
         training_metrics['conf_matrix'].append(conf_matrix)
+
+        scheduler.step(avg_val_loss)
 
         # Print epoch stats
         print(f"Epoch {epoch+1}/{epochs}, Training Loss: "
               + f"{train_loss/len(train_loader):.4f}, Validation Loss: "
               + f"{val_loss/len(val_loader):.4f}, Validation Accuracy: "
               + f"{val_accuracy:.4f}")
+
+        if torch.isnan(torch.tensor(avg_train_loss)) or torch.isnan(torch.tensor(avg_val_loss)):
+            print("NaN loss detected at epoch {epoch+1}. Stopping training.")
+            break
 
     end_time = time.time()
     training_duration = end_time - start_time
