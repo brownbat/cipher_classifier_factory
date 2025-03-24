@@ -9,15 +9,6 @@ import os
 import glob
 import json
 
-# TODO:
-# 1. clicking ghost points should adjust settings (using a click handler)
-# 2. greedily load nearby points only for efficiency
-# 3. load multiple files
-# 4. host in the cloud
-# 5. provide some hint as to how much each param matters / does not
-# - calculate average and std dev for all experiments at that param's
-#   current value, show a graph of that beneath each slider?
-# move from json to a database?
 
 # allow user to designate which metrics are sliders and which are x/y and which are simply ignored
 # display in a text box somewhere those other metrics

@@ -16,40 +16,6 @@ import signal
 import time
 import argparse
 
-# note bug where loss can diverge to infinity/NaN
-# see https://stackoverflow.com/questions/40050397/deep-learning-nan-loss-reasons
-
-# look at speed throughout
-# todo -- add additional ciphers, such as ADFGVX, trifid, VIC, enigma, railfence
-# implement early stopping
-# adjust visualizations.py to focus on higher sample count experiments
-# clean completed_experiments.json of low sample count experiments
-# move from LSTM to transformers
-# look at persistence of exp1/exp2... in naming convention, is it avoidable?
-
-# TODO -- INVESTIGATE accuracy, overheating, crashes
-
-#   LOW ACCURACY
-# why is {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.2, 'learning_rate': 0.001}
-# so awful compared to neighbors? random bad luck on dropout? re-run
-# it only had 55.7 accuracy, but we get 
-# 96 accuracy from {'epochs': 30, 'num_layers': 32, 'batch_size': 256, 'embedding_dim': 64, 'hidden_dim': 192, 'dropout_rate': 0.1, 'learning_rate': 0.003}
-# why is 100k samples accuracy lower than recent 20k sample experiment accuracy
-
-# add option to run same experiment multiple times, generating fresh data or using consistent seed
-
-#   OVERHEATING
-# Overheating with {'epochs': 60, 'num_layers': 128, 'batch_size': 128, 'embedding_dim': 64, 'hidden_dim': 512, 'dropout_rate': 0.3, 'learning_rate': 0.004}
-# No overheating with {'epochs': 45, 'num_layers': 64, 'batch_size': 64, 'embedding_dim': 32, 'hidden_dim': 256, 'dropout_rate': 0.3, 'learning_rate': 0.003}
-# overheating with num_samples 1,000,000, not with 10,000
-# overheating seems tied to complexity, especially hidden_dim, suggesting vram issue - file bug?
-
-#   CRASHES
-# 100000 samples, batch 256, embedding 128, hidden 256
-# 100000 samples, num_layers: 128, batch_size: 32, embedding_dim: 32, hidden_dim: 512
-
-# for debugging: 
-# try: python3 researcher.py --num_samples 1000000 --num_layers 256 --batch_size 256 --embedding_dim 512 --hidden_dim 512
 
 
 # set file location as working directory
@@ -62,15 +28,15 @@ should_continue = True
 # set these parameters with alternatives to run combination of all alternatives
 default_params = {
     'ciphers': [_get_cipher_names()],
-    'num_samples': [1000000],
+    'num_samples': [100000],
     'sample_length': [500],
-    'epochs': [60],
+    'epochs': [30],
     'num_layers': [128],
     'batch_size': [32],
     'embedding_dim': [32],
     'hidden_dim': [256, 512],
-    'dropout_rate': [0.2, 0.3],
-    'learning_rate': [0.004]
+    'dropout_rate': [0.2, 0.4],
+    'learning_rate': [0.004, 0.006]
 }
 
 
@@ -101,8 +67,6 @@ def plot_confusion_matrices(file_path='data/completed_experiments.json'):
     experiments = safe_json_load(file_path)
 
     for exp in experiments:
-        # TODO: This is too slow for large datasets. consider instead reworking
-        # to call with a specific UID in mind. cm_to_gif(uid, filename) or sim
         # Check if metrics and training_time are available
         if ('metrics' in exp and 'training_time' in exp
                 and 'conf_matrix' in exp['metrics']):
@@ -143,7 +107,7 @@ def plot_confusion_matrices(file_path='data/completed_experiments.json'):
                 title += f" - Epoch {epoch}/{len(conf_matrices)}\n"
                 title += ', '.join([f"{key}: {value}" for key, value in hyperparams.items()])
                 plt.title(title)
-                
+
                 frame_filename = f"data/cm/tmp_frame_{epoch}.png"
                 frame_dir = os.path.dirname(frame_filename)
                 os.makedirs(frame_dir, exist_ok=True)  # make directory if it does not exist
@@ -183,7 +147,6 @@ def plot_confusion_matrices(file_path='data/completed_experiments.json'):
 
 
 def query_experiments_metrics(file_path='data/experiments.json'):
-    # TODO ensure compatible with current data model
     experiments = safe_json_load(file_path)
 
     outstr = ""
@@ -222,7 +185,6 @@ def get_experiment_details(exp):
     '''
     Returns experiment details as a formatted string.
     '''
-    # TODO ensure compatible with current data model
     details = []
     details.append("Experiment details")
 
@@ -245,7 +207,7 @@ def get_experiment_details(exp):
     hidden_dim = hyperparams.get('hidden_dim', 'N/A')
     dropout_rate = hyperparams.get('dropout_rate', 'N/A')
     learning_rate = hyperparams.get('learning_rate', 'N/A')
- 
+
     details.append(f"Epochs: {epochs}")
     details.append(f"Layers: {num_layers}")
     details.append(f"Batch size: {batch_size}")
@@ -279,8 +241,8 @@ def run_experiment(exp):
     # Append timestamp to the experiment ID for uniqueness
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     data = get_data(data_params)
-    
-    
+
+
     print(f"Running experiment: {exp['experiment_id']}...")
     model, metrics = train_model(data, hyperparams)
     exp['metrics'] = convert_ndarray_to_list(metrics)
@@ -291,7 +253,7 @@ def run_experiment(exp):
     exp['uid'] = unique_id
     print(f"Experiment {exp['experiment_id']} completed")
     print(f"  now called: {exp['uid']}")
-    
+
     model_filename = f'data/models/{unique_id}.pt'
     model_dir = os.path.dirname(model_filename)
     os.makedirs(model_dir, exist_ok=True) # create directory if it doesn't exist
@@ -311,7 +273,7 @@ def read_experiments(file_path, exp_uid=[]):
 
     for exp in experiments:
         # report on matching experiments, or ALL if exp_uid is []
-        if exp_uid == [] or exp['uid'] in exp_uid:  
+        if exp_uid == [] or exp['uid'] in exp_uid:
             metrics = exp.get('metrics', {})
             if not metrics:
                 warning_message = f"WARNING: No metrics available for experiment {exp['experiment_id']}!"
@@ -476,14 +438,10 @@ def load_experiment_keys(file_path):
 
 
 def generate_experiments(settings={}, pending_file='data/pending_experiments.json', completed_file='data/completed_experiments.json'):
-    # TODO - consider hashing the experiment_key and using it in a hash table to
-    # speed lookups for experiment collisions
-    # TODO - responsibly overwrite an old experiment if rerun=True 
     print("Generating new experiments to run based off of settings:")
     print(settings)
     print()
 
-    # TODO: change defaults to lists to avoid nonlist check
     default_params = {
         'num_samples': 10000,
         'sample_length': 200,
@@ -521,7 +479,7 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
         for combination in combinations:
             experiment_params = {**non_list_params, **combination}
             experiment_params['ciphers'] = list(cipher_set)
-            
+
             experiment = {
                 'data_params': {
                     'ciphers': experiment_params.pop('ciphers'),
@@ -540,7 +498,7 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
     completed_keys = load_experiment_keys(completed_file)
 
     experiments_to_add = [exp for exp in new_experiments if experiment_key(exp) not in pending_keys and experiment_key(exp) not in completed_keys]
-    
+
     print(f"Considering {len(new_experiments)} experiments for duplicates.")
     print(f"{len(experiments_to_add)} new experiments to add.")
 
@@ -639,7 +597,7 @@ def main():
             print(f"Experiment with key {exp_key} already completed. Removing from pending list.")
             pending_experiments.remove(exp)
             continue
-            
+
         updated_exp = run_experiment(exp)
         experiment_details = get_experiment_details(updated_exp)
         num_completed += 1
@@ -672,7 +630,6 @@ def main():
         print("Skipping building confusion matrix .gif files...")
     elif build_cm_gifs:
         # Plot confusion matrices for the new experiments
-        # TODO: just plot for the best performer of the batch?
         plot_confusion_matrices()
 
 

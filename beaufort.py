@@ -1,4 +1,3 @@
-# TODO - continue testing and refining
 
 def generate_keyed_alphabet(key):
     standard_alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'

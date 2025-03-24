@@ -5,7 +5,6 @@ import inspect
 import itertools
 
 
-# TODO add ADFGVX, trifid, VIC, enigma, railfence
 
 def _get_cipher_functions():
     """
@@ -45,7 +44,6 @@ def _random_keyword(length=None):
     return random_keyword
 
 
-# TODO deal with the fact these signatures are not uniform
 def english(length=None, keep_spaces=False):
     '''
     Returns random strings of english text from leading project gutenberg texts
@@ -351,7 +349,6 @@ def bifid(length=None, text=None, keyword=None, encode=True):
 
 
 def fractionated_morse(length=None, text=None, key=None, shift=0, encode=True):
-    # TODO: retain spaces 
     # initialize text
     if text is None:
         if length is None:
@@ -506,7 +503,6 @@ def columnar_transposition(length=None, text=None, key=None, padding_char=None, 
         return ''.join(''.join(row) for row in matrix).rstrip()
 
 
-# TODO implement ADFGVX, trifid, VIC, enigma, railfence
 
 
 if __name__ == "__main__":

@@ -8,7 +8,6 @@ import json
 import hashlib
 
 
-# TODO fix odd bug div by zero
 
 def file_hash(filename):
     """Generate a hash for a file."""
@@ -50,7 +49,6 @@ def generate_batches(cipher_funcs=None, sample_length=500, num_batches=1, progre
     Returns:
     - List of tuples, where each tuple contains the sample and its label.
     """
-    # TODO - fix generation error, shifted two cols to the right
     samples = []
     if cipher_funcs is None:
         cipher_funcs = ciphers._get_cipher_functions()

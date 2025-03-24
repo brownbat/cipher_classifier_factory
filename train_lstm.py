@@ -28,8 +28,6 @@ import time
 import subprocess
 import gc
 
-# TODO: feature engineering, index of coincidence, digraphs, trigraphs,
-#   skipgraphs, ioc for subsets
 
 # Constants
 EPOCHS = 5
