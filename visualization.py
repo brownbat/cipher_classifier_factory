@@ -5,9 +5,9 @@ from dash.dependencies import Input, Output
 import plotly.express as px
 import pandas as pd
 import os
-# from researcher import safe_json_load
 import glob
 import json
+import functools
 
 
 # allow user to designate which metrics are sliders and which are x/y and which are simply ignored
@@ -88,11 +88,6 @@ def calculate_avg_accuracy_per_value(data, param_name):
     return avg_accuracy_per_value
 
 
-def load_subset_of_data(file_path='data/completed_experiments-subset.json', max_experiments=100):
-    with open(file_path, 'r') as file:
-        data = safe_json_load(file)
-        # Assuming data is a list of experiments
-        return data[:max_experiments]
 
 def generate_colors(num_colors, saturation=40, lightness=40):
     """Generate 'num_colors' distinct pastel colors in HSL format and return them as a list."""
@@ -273,12 +268,14 @@ def setup_dash_app(data=None):
 
         
         if current_key not in transformed_data_dict:
+            # Handle case where the parameter set hasn't been tested
             fig = px.scatter(x=[0], y=[0], labels={'x':'Training Time', 'y':'Accuracy'})
             fig.add_annotation(text="Untested parameter set",
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False,
                 font=dict(size=16, color="blue"))
-        if current_key in transformed_data_dict:
+        else:
+            # Handle case where we have data for this parameter set
             current_output1, current_output2, _ = transformed_data_dict[current_key]
             fig = px.scatter(x=[current_output1], y=[current_output2], 
                              labels={'x':'Training Time', 'y':'Accuracy'})
@@ -313,12 +310,11 @@ def setup_dash_app(data=None):
                     # Check if the next_key exists in transformed_data_dict
                     if next_key in transformed_data_dict:
                         ghost_output1, ghost_output2, _ = transformed_data_dict[next_key]
-                        output_values = {'output1':df['output1'], 'output2':df['output2']}
-
+                        
                         # Add ghost point to the plot with hover info displaying original values
                         label = f'Ghost Point for {param_name} (Param{idx + 1})'
                         fig.add_scatter(
-                            x=[ghost_output1],  # replace with offset values if necessary
+                            x=[ghost_output1],
                             y=[ghost_output2],
                             mode='markers',
                             marker=dict(
@@ -330,55 +326,84 @@ def setup_dash_app(data=None):
                             hoverinfo='text')
                         # Add lines to ghost points for visibility
                         fig.add_shape(type='line',
-                                      x0=current_output1, y0=current_output2,  # add offsets here as appropriate
+                                      x0=current_output1, y0=current_output2,
                                       x1=ghost_output1, y1=ghost_output2,
                                       line=dict(color=colors[idx % len(colors)], width=2, dash='dot'))
         return fig
     return app
 
 
-def transform_data(data):
-    transformed_tuples = []
-    for experiment in data:
-        # Extracting parameters
-        params = (
-            len(experiment['data_params']['ciphers']),
-            experiment['data_params']['num_samples'],
-            experiment['data_params']['sample_length'],
-            experiment['hyperparams']['batch_size'],
-            experiment['hyperparams']['dropout_rate'],
-            experiment['hyperparams']['embedding_dim'],
-            experiment['hyperparams']['epochs'],
-            experiment['hyperparams']['hidden_dim'],
-            experiment['hyperparams']['learning_rate'],
-            experiment['hyperparams']['num_layers']
-        )
+# Cache for transformed data
+_transform_cache = {}
+
+def transform_data(data, use_cache=True):
+    """
+    Transform the experiment data into a format suitable for visualization.
+    Dynamically extracts parameters and metrics from the experiment data.
+    
+    Args:
+        data: List of experiment dictionaries
+        use_cache: Whether to use cached results if available
         
-        # Extracting metrics
-        training_duration = experiment['metrics']['training_duration']
-        final_accuracy = experiment['metrics']['val_accuracy'][-1]  # using the final validation accuracy
-        final_loss = experiment['metrics']['val_loss'][-1]  # using the final validation loss
-
-        experiment_tuple = (params, (training_duration, final_accuracy, final_loss))
-        transformed_tuples.append(experiment_tuple)
-
-    return transformed_tuples
-
-
-def transform_data_dynamic(data):
+    Returns:
+        List of (parameters, metrics) tuples
+    """
+    # Use a simple cache key based on the number of items and first/last item hash
+    if data:
+        cache_key = (len(data), id(data[0]), id(data[-1]))
+        if use_cache and cache_key in _transform_cache:
+            return _transform_cache[cache_key]
+    
     transformed_tuples = []
     for experiment in data:
         params = []
-        # Dynamically extracting parameters from 'data_params' and 'hyperparams'
-        for param_category in ['data_params', 'hyperparams']:
-            if param_category in experiment:
-                for key, value in experiment[param_category].items():
-                    if isinstance(value, list):
-                        # For lists (like ciphers), store their length
-                        params.append(len(value))
+        
+        # Dynamically extracting parameters from 'data_params'
+        if 'data_params' in experiment:
+            for key, value in sorted(experiment['data_params'].items()):
+                if isinstance(value, list):
+                    # For lists (like ciphers), store their length
+                    params.append(len(value))
+                else:
+                    # For other types, store the value directly
+                    params.append(value)
+        
+        # Extract hyperparameters
+        if 'hyperparams' in experiment:
+            # Common hyperparameters
+            for key in ['batch_size', 'dropout_rate', 'epochs', 'learning_rate']:
+                if key in experiment['hyperparams']:
+                    params.append(experiment['hyperparams'][key])
+                else:
+                    params.append(None)  # Add placeholder for missing values
+            
+            # Transformer hyperparameters
+            for key in ['d_model', 'nhead', 'num_encoder_layers', 'dim_feedforward']:
+                if key in experiment['hyperparams']:
+                    params.append(experiment['hyperparams'][key])
+                else:
+                    params.append(None)
+        
+        # Extracting metrics
+        metrics = []
+        if 'metrics' in experiment:
+            for key in ['training_duration', 'val_accuracy', 'val_loss']:
+                if key in experiment['metrics']:
+                    value = experiment['metrics'][key]
+                    # For 'val_accuracy' and 'val_loss', use the last value
+                    if key in ['val_accuracy', 'val_loss'] and isinstance(value, list):
+                        metrics.append(value[-1])
                     else:
-                        # For other types, store the value directly
-                        params.append(value)
+                        metrics.append(value)
+
+        experiment_tuple = (tuple(params), tuple(metrics))
+        transformed_tuples.append(experiment_tuple)
+    
+    # Cache the result
+    if data:
+        _transform_cache[cache_key] = transformed_tuples
+    
+    return transformed_tuples
 
         # Extracting metrics
         metrics = []
@@ -394,7 +419,11 @@ def transform_data_dynamic(data):
 
         experiment_tuple = (tuple(params), tuple(metrics))
         transformed_tuples.append(experiment_tuple)
-
+    
+    # Cache the result
+    if data:
+        _transform_cache[cache_key] = transformed_tuples
+    
     return transformed_tuples
 
 
@@ -406,13 +435,23 @@ def load_and_concatenate_json_files(pattern):
     return all_data
 
 
-def load_data():
+def load_data(max_experiments=None):
+    """
+    Load experiment data from JSON files and optionally limit to a maximum number of experiments.
+    
+    Args:
+        max_experiments: Optional maximum number of experiments to include
+        
+    Returns:
+        List of filtered experiment dictionaries
+    """
     if USE_MAIN_DATASET:
         data = safe_json_load('data/completed_experiments.json')
     else:  # use all completed jsons in the data folder
         json_files_pattern = "data/completed_experiments*.json"
         data = load_and_concatenate_json_files(json_files_pattern)
 
+    # Define filter parameters for transformer models
     params = {
         'ciphers': [[
             "english",
@@ -428,54 +467,80 @@ def load_data():
         'num_samples': [100000],
         'sample_length': [500],
         'epochs': [30],
-        'num_layers': [64, 128, 256],
-        'batch_size': [16, 32, 64],
-        'embedding_dim': [16, 32, 64],
-        'hidden_dim': [128, 256, 512],
-        'dropout_rate': [0.1, 0.2, 0.3],
-        'learning_rate': [0.002, 0.003, 0.004]
+        'd_model': [128, 256],
+        'nhead': [4, 8],
+        'num_encoder_layers': [2, 4],
+        'dim_feedforward': [512, 1024],
+        'batch_size': [32, 64],
+        'dropout_rate': [0.1, 0.2],
+        'learning_rate': [1e-4, 3e-4]
     }
+    
     data = filter_experiments(data, params)
+    
+    # Limit to max_experiments if specified
+    if max_experiments is not None and max_experiments > 0:
+        data = data[:max_experiments]
+        
+    return data
+    
+    data = filter_experiments(data, params)
+    
+    # Limit to max_experiments if specified
+    if max_experiments is not None and max_experiments > 0:
+        data = data[:max_experiments]
+        
     return data
 
 
-def build_param_value_map_dynamic(transformed_data):
-    param_value_map = {}
-    for params, _ in transformed_data:
-        for idx, param in enumerate(params):
-            # Assuming each parameter can be uniquely identified by its index
-            param_name = f"param_{idx}"
-            if param_name not in param_value_map:
-                param_value_map[param_name] = set()
-            param_value_map[param_name].add(param)
-    return param_value_map
-
-
 def build_param_value_map(transformed_data):
-    param_value_map = {
-        'num_ciphers': set(),
-        'num_samples': set(),
-        'sample_length': set(),
-        'batch_size': set(),
-        'dropout_rate': set(),
-        'embedding_dim': set(),
-        'epochs': set(),
-        'hidden_dim': set(),
-        'learning_rate': set(),
-        'num_layers': set()
-    }
-
+    """
+    Build a map of parameter names to their possible values based on transformed data.
+    
+    Args:
+        transformed_data: List of (parameters, metrics) tuples
+        
+    Returns:
+        Dict mapping parameter names to sets of possible values
+    """
+    # Define parameter names for transformer models
+    param_names = [
+        # Data parameters
+        'num_ciphers', 'num_samples', 'sample_length',
+        # Common hyperparameters
+        'batch_size', 'dropout_rate', 'epochs', 'learning_rate',
+        # Transformer hyperparameters
+        'd_model', 'nhead', 'num_encoder_layers', 'dim_feedforward'
+    ]
+    
+    # Create a map with empty sets
+    param_value_map = {param_name: set() for param_name in param_names}
+    
+    # Fill the map with values from the transformed data
     for experiment in transformed_data:
-        hyperparams = experiment[0]
-        for idx, param_name in enumerate(param_value_map.keys()):
-            param_value_map[param_name].add(hyperparams[idx])
-
+        params = experiment[0]
+        for idx, param_value in enumerate(params):
+            if idx < len(param_names):
+                param_name = param_names[idx]
+                if param_value is not None:  # Only add non-None values
+                    param_value_map[param_name].add(param_value)
+    
     return param_value_map
 
 
-data = load_data()
-app = setup_dash_app(data)
+# Parse command line arguments
+import argparse
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    parser = argparse.ArgumentParser(description="Visualization tool for transformer experiment results")
+    parser.add_argument('--max_experiments', type=int, default=100,
+                      help="Maximum number of experiments to include")
+    args = parser.parse_args()
+    
+    # Load data with specified limit
+    data = load_data(max_experiments=args.max_experiments)
+    app = setup_dash_app(data)
+    
+    # Run the app
+    app.run(debug=True)
 

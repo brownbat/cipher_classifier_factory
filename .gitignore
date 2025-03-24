@@ -10,6 +10,15 @@ credentials.json
 *.pt
 *.css
 
+# Project-specific files to ignore
+TODO.md
+CLAUDE.md
+findings.md
+queue_experiments.json
+checkpoints/
+data/models/
+data/results/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

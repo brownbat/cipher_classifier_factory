@@ -8,13 +8,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import imageio.v2 as imageio
-from train_lstm import train_model, get_data
-from ciphers import _get_cipher_names
 import torch
-
 import signal
 import time
 import argparse
+
+# Import from our new modular structure
+from models import train_model, get_data
+from models.common.utils import safe_json_load, convert_ndarray_to_list
+from ciphers import _get_cipher_names
 
 
 
@@ -31,35 +33,32 @@ default_params = {
     'num_samples': [100000],
     'sample_length': [500],
     'epochs': [30],
-    'num_layers': [128],
-    'batch_size': [32],
-    'embedding_dim': [32],
-    'hidden_dim': [256, 512],
-    'dropout_rate': [0.2, 0.4],
-    'learning_rate': [0.004, 0.006]
+    # Transformer hyperparameters
+    'd_model': [128, 256],  # Embedding dimension
+    'nhead': [4, 8],  # Number of attention heads
+    'num_encoder_layers': [2, 4],  # Number of transformer layers
+    'dim_feedforward': [512, 1024],  # Hidden dimension in feed forward network
+    'batch_size': [32, 64],
+    'dropout_rate': [0.1, 0.2],
+    'learning_rate': [1e-4, 3e-4]  # Lower learning rates for transformers
 }
 
 
-def safe_json_load(file_path):
-    try:
-        with open(file_path, 'r') as file:
-            return json.load(file)
-    except json.JSONDecodeError:
-        # Handle empty or invalid JSON file
-        print(f"WARNING: {file_path} is empty or invalid. An empty list will be used.")
-        return []
-    except FileNotFoundError:
-        # Handle file not found and create a new empty file
-        print(f"WARNING: {file_path} not found. Creating a new file.")
-        with open(file_path, 'w') as file:
-            json.dump([], file)
-        return []
+# Using safe_json_load from models.common.utils
 
 
 def signal_handler(sig, frame):
+    """
+    Handle Ctrl+C to immediately save checkpoint and exit
+    """
     global should_continue
-    print('Ctrl+C pressed, preparing to exit...')
+    print('\nCtrl+C pressed. Saving checkpoint and exiting...')
+    print('Use `python researcher.py` later to resume from checkpoint.')
     should_continue = False
+    
+    # Exit with a clean status code
+    # Training code will save checkpoint before exiting
+    sys.exit(0)
 
 
 def plot_confusion_matrices(file_path='data/completed_experiments.json'):
@@ -167,18 +166,7 @@ def query_experiments_metrics(file_path='data/experiments.json'):
     return outstr
 
 
-def convert_ndarray_to_list(obj):
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()  # Convert ndarray to list
-    elif isinstance(obj, list):
-        # Recursively apply to items
-        return [convert_ndarray_to_list(item) for item in obj]
-    elif isinstance(obj, dict):
-        # Apply to dictionary values
-        return {
-            key: convert_ndarray_to_list(value) for key, value in obj.items()}
-    else:
-        return obj
+# Using convert_ndarray_to_list from models.common.utils
 
 
 def get_experiment_details(exp):
@@ -201,20 +189,25 @@ def get_experiment_details(exp):
 
     hyperparams = exp.get('hyperparams', {})
     epochs = hyperparams.get('epochs', 'N/A')
-    num_layers = hyperparams.get('num_layers', 'N/A')
     batch_size = hyperparams.get('batch_size', 'N/A')
-    embedding_dim = hyperparams.get('embedding_dim', 'N/A')
-    hidden_dim = hyperparams.get('hidden_dim', 'N/A')
     dropout_rate = hyperparams.get('dropout_rate', 'N/A')
     learning_rate = hyperparams.get('learning_rate', 'N/A')
 
     details.append(f"Epochs: {epochs}")
-    details.append(f"Layers: {num_layers}")
     details.append(f"Batch size: {batch_size}")
-    details.append(f"Embedding dimensions: {embedding_dim}")
-    details.append(f"Hidden dimensions: {hidden_dim}")
     details.append(f"Dropout rate: {dropout_rate}")
     details.append(f"Learning rate: {learning_rate}")
+    
+    # Transformer hyperparameters
+    d_model = hyperparams.get('d_model', 'N/A')
+    nhead = hyperparams.get('nhead', 'N/A')
+    num_encoder_layers = hyperparams.get('num_encoder_layers', 'N/A')
+    dim_feedforward = hyperparams.get('dim_feedforward', 'N/A')
+    
+    details.append(f"Model dimension: {d_model}")
+    details.append(f"Attention heads: {nhead}")
+    details.append(f"Encoder layers: {num_encoder_layers}")
+    details.append(f"Feedforward dim: {dim_feedforward}")
 
     metrics = exp.get('metrics', {})
     if metrics:
@@ -241,24 +234,36 @@ def run_experiment(exp):
     # Append timestamp to the experiment ID for uniqueness
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     data = get_data(data_params)
-
+    
+    # Create unique experiment ID for this run
+    unique_id = f'{exp["experiment_id"]}_{timestamp}'
+    exp['uid'] = unique_id
+    
+    # Add experiment ID to hyperparams for checkpointing
+    hyperparams['experiment_id'] = unique_id
 
     print(f"Running experiment: {exp['experiment_id']}...")
-    model, metrics = train_model(data, hyperparams)
+    model, metrics, model_metadata = train_model(data, hyperparams)
     exp['metrics'] = convert_ndarray_to_list(metrics)
 
     # Update experiment details with results
     exp['training_time'] = timestamp
-    unique_id = f'{exp["experiment_id"]}_{exp["training_time"]}'
-    exp['uid'] = unique_id
     print(f"Experiment {exp['experiment_id']} completed")
     print(f"  now called: {exp['uid']}")
 
+    # Save the model
     model_filename = f'data/models/{unique_id}.pt'
     model_dir = os.path.dirname(model_filename)
-    os.makedirs(model_dir, exist_ok=True) # create directory if it doesn't exist
+    os.makedirs(model_dir, exist_ok=True)  # create directory if it doesn't exist
     exp['model_filename'] = model_filename
-    torch.save(model.state_dict(), model_filename)
+    torch.save(model, model_filename)
+    
+    # Save model metadata
+    metadata_filename = f'data/models/{unique_id}_metadata.pkl'
+    exp['metadata_filename'] = metadata_filename
+    with open(metadata_filename, 'wb') as f:
+        import pickle
+        pickle.dump(model_metadata, f)
 
     return exp
 
@@ -438,21 +443,38 @@ def load_experiment_keys(file_path):
 
 
 def generate_experiments(settings={}, pending_file='data/pending_experiments.json', completed_file='data/completed_experiments.json'):
-    print("Generating new experiments to run based off of settings:")
-    print(settings)
-    print()
+    """
+    This function has been removed. Please use manage_queue.py instead.
+    """
+    print("⚠️  Queue management has been moved to manage_queue.py")
+    print("To add experiments to the queue, use:")
+    print("  python manage_queue.py --d_model 128,256 --nhead 4,8")
+    print("For more options run: python manage_queue.py --help")
+    print("")
+    
+    # Show current queue status
+    pending_experiments = safe_json_load(pending_file)
+    print(f"Current queue has {len(pending_experiments)} experiments.")
+    
+    return  # Early return - don't actually generate anything
 
     default_params = {
         'num_samples': 10000,
         'sample_length': 200,
         'epochs': 3,
-        'num_layers': 10,
         'batch_size': 32,
+        'dropout_rate': 0.1,
+        'learning_rate': 1e-4,
+        'ciphers': ['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise'],
+        # Transformer-specific defaults
+        'd_model': 128,
+        'nhead': 8,
+        'num_encoder_layers': 2,
+        'dim_feedforward': 512,
+        # LSTM-specific defaults (for backward compatibility)
+        'num_layers': 10,
         'embedding_dim': 32,
-        'hidden_dim': 64,
-        'dropout_rate': 0.015,
-        'learning_rate': 0.002,
-        'ciphers': ['english', 'vigenere', 'caesar', 'columnar_transposition', 'random_noise']
+        'hidden_dim': 64
     }
     default_params.update(settings)
     settings.update(default_params)
@@ -514,21 +536,34 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
     print(f"{len(pending_keys)} total experiments to run.")
 
 
-def argument_parser(default_params):
-    parser = argparse.ArgumentParser(description="Generate LSTM models with various configurations.")
+def argument_parser():
+    parser = argparse.ArgumentParser(description="Generate transformer models with various configurations.")
+    
+    # Execution mode
+    parser.add_argument('--immediate', action='store_true', help="Run a single experiment immediately, bypassing the queue.")
+    
+    # Experiment parameters
     parser.add_argument('--ciphers', nargs='*', default='all', help="List of ciphers to use, such as 'vigenere' or 'caesar', or 'all' for all ciphers.")
     parser.add_argument('--num_samples', nargs='*', type=int, default=None, help="Number of samples to generate.")
     parser.add_argument('--sample_length', nargs='*', type=int, default=None, help="Length of samples to generate.")
     parser.add_argument('--epochs', nargs='*', type=int, default=None, help="Number of epochs to train.")
-    parser.add_argument('--num_layers', nargs='*', type=int, default=None, help="Number of layers.")
+    
+    # Transformer parameters
+    parser.add_argument('--d_model', nargs='*', type=int, default=None, help="Model dimension.")
+    parser.add_argument('--nhead', nargs='*', type=int, default=None, help="Number of attention heads.")
+    parser.add_argument('--num_encoder_layers', nargs='*', type=int, default=None, help="Number of encoder layers.")
+    parser.add_argument('--dim_feedforward', nargs='*', type=int, default=None, help="Dimension of feedforward network.")
+    
+    # Other parameters
     parser.add_argument('--batch_size', nargs='*', type=int, default=None, help="Batch size.")
-    parser.add_argument('--embedding_dim', nargs='*', type=int, default=None, help="Embedding dimensions.")
-    parser.add_argument('--hidden_dim', nargs='*', type=int, default=None, help="Hidden dimensions.")
-    parser.add_argument('--dropout_rate', nargs='*', type=float, default=None, help="Dropout rate.")  # Changed to float for rates
-    parser.add_argument('--learning_rate', nargs='*', type=float, default=None, help="Learning rate.")  # Changed to float for rates
+    parser.add_argument('--dropout_rate', nargs='*', type=float, default=None, help="Dropout rate.")
+    parser.add_argument('--learning_rate', nargs='*', type=float, default=None, help="Learning rate.")
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def process_args(args, default_params):
+    """Process command line arguments into parameters dictionary"""
     # Copy default_params to avoid modifying the original
     params = default_params.copy()
 
@@ -544,27 +579,72 @@ def argument_parser(default_params):
         params['sample_length'] = args.sample_length
     if args.epochs is not None:
         params['epochs'] = args.epochs
-    if args.num_layers is not None:
-        params['num_layers'] = args.num_layers
     if args.batch_size is not None:
         params['batch_size'] = args.batch_size
-    if args.embedding_dim is not None:
-        params['embedding_dim'] = args.embedding_dim
-    if args.hidden_dim is not None:
-        params['hidden_dim'] = args.hidden_dim
     if args.dropout_rate is not None:
         params['dropout_rate'] = args.dropout_rate
     if args.learning_rate is not None:
         params['learning_rate'] = args.learning_rate
+    
+    # Transformer parameters
+    if args.d_model is not None:
+        params['d_model'] = args.d_model
+    if args.nhead is not None:
+        params['nhead'] = args.nhead
+    if args.num_encoder_layers is not None:
+        params['num_encoder_layers'] = args.num_encoder_layers
+    if args.dim_feedforward is not None:
+        params['dim_feedforward'] = args.dim_feedforward
 
     return params
+
+
+def create_single_experiment(params):
+    """Create a single experiment from parameters without permutation."""
+    # Convert lists to first value if needed
+    single_params = {}
+    for key, value in params.items():
+        if isinstance(value, list) and len(value) > 0:
+            single_params[key] = value[0] 
+        else:
+            single_params[key] = value
+    
+    # Create experiment structure
+    data_params = {
+        'ciphers': [single_params['ciphers']] if isinstance(single_params['ciphers'], list) else single_params['ciphers'],
+        'num_samples': single_params['num_samples'],
+        'sample_length': single_params['sample_length']
+    }
+    
+    hyperparams = {
+        'epochs': single_params['epochs'],
+        'd_model': single_params['d_model'],
+        'nhead': single_params['nhead'],
+        'num_encoder_layers': single_params['num_encoder_layers'],
+        'dim_feedforward': single_params['dim_feedforward'],
+        'batch_size': single_params['batch_size'],
+        'dropout_rate': single_params['dropout_rate'],
+        'learning_rate': single_params['learning_rate']
+    }
+    
+    experiment = {
+        'experiment_id': 'immediate_exp',
+        'data_params': data_params,
+        'hyperparams': hyperparams,
+        'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    return experiment
 
 
 def main():
     global should_continue
     global default_params
     build_cm_gifs = True
-    params = argument_parser(default_params)
+    
+    # Parse arguments
+    args = argument_parser()
+    params = process_args(args, default_params)
 
     print(f"Using torch version {torch.__version__}")
     if torch.cuda.is_available():
@@ -574,12 +654,49 @@ def main():
     print("Current CUDA device:")
     print(torch.cuda.get_device_name(0))
 
+    # Register signal handlers for both Ctrl+C and kill commands
     signal.signal(signal.SIGINT, signal_handler)
-    generate_experiments(params)
-
-    # Run experiments from the pending file
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Handle immediate experiment mode
+    if args.immediate:
+        print("Running a single experiment immediately (bypassing queue)...")
+        experiment = create_single_experiment(params)
+        print(f"Experiment parameters:")
+        print(f"- d_model: {experiment['hyperparams']['d_model']}")
+        print(f"- nhead: {experiment['hyperparams']['nhead']}")
+        print(f"- num_encoder_layers: {experiment['hyperparams']['num_encoder_layers']}")
+        print(f"- dim_feedforward: {experiment['hyperparams']['dim_feedforward']}")
+        print(f"- batch_size: {experiment['hyperparams']['batch_size']}")
+        print(f"- dropout_rate: {experiment['hyperparams']['dropout_rate']}")
+        print(f"- learning_rate: {experiment['hyperparams']['learning_rate']}")
+        
+        updated_exp = run_experiment(experiment)
+        experiment_details = get_experiment_details(updated_exp)
+        print("***")
+        print(experiment_details)
+        print("***")
+        
+        # Save the experiment as completed
+        append_to_experiment_file('data/completed_experiments.json', updated_exp)
+        return
+    
+    # Normal queue processing mode - remove the generate_experiments call
+    # Just check the pending experiments
     pending_experiments = get_pending_experiments()
     completed_keys = get_completed_experiment_keys()
+    
+    # Check if queue is empty and provide guidance
+    if not pending_experiments:
+        print("\n📋 The experiment queue is empty.")
+        print("To add experiments to the queue, use the manage_queue.py tool:")
+        print("  python manage_queue.py --d_model 128,256 --nhead 4,8")
+        print("  python manage_queue.py --replace --epochs 30 --batch_size 32,64")
+        print("  python manage_queue.py --list")
+        print("  python manage_queue.py --clear")
+        print("\nOr run a single experiment immediately:")
+        print("  python researcher.py --immediate --d_model 128 --nhead 8")
+        return
 
     trained_experiments = []
     for exp in pending_experiments.copy():
@@ -587,11 +704,8 @@ def main():
         num_pending = len(get_pending_experiments())
         num_completed = len(get_completed_experiment_keys())
 
-        print("Press `Ctrl+C` at any time to exit cleanly after this experiment completes.")
-        if not should_continue:
-            print("Exit command received. Stopping further processing.")
-            break
-
+        print("Press `Ctrl+C` at any time to save checkpoint and exit.")
+        
         exp_key = experiment_key(exp)
         if exp_key in completed_keys:
             print(f"Experiment with key {exp_key} already completed. Removing from pending list.")
@@ -625,12 +739,15 @@ def main():
         # Notification training batch is complete
         notifications.send_discord_notification(
             "Pending experiments batch complete")
-
-    if not should_continue:
-        print("Skipping building confusion matrix .gif files...")
-    elif build_cm_gifs:
-        # Plot confusion matrices for the new experiments
-        plot_confusion_matrices()
+        
+        # Suggest using generate_gifs.py instead of generating them here
+        if trained_experiments:
+            latest_exp = trained_experiments[-1]
+            print("\n📊 Experiment visualization:")
+            print("To generate confusion matrix GIFs, use:")
+            print(f"  python generate_gifs.py --experiment {latest_exp}")
+            print("  python generate_gifs.py --recent 3")
+            print("  python generate_gifs.py --all")
 
 
     print("Cleaning up files")
