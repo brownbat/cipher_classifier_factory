@@ -25,6 +25,56 @@ CHECKPOINT_FREQ = 1  # Save checkpoint every N epochs
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 
+def clean_old_checkpoints(experiment_id, keep_n=1, completed=False):
+    """
+    Clean checkpoints for an experiment.
+    For incomplete experiments: keep only the latest checkpoint.
+    For completed experiments: remove all checkpoints.
+    """
+    # Get all checkpoints for this experiment
+    checkpoints = [f for f in os.listdir(CHECKPOINT_DIR) 
+                  if f.startswith(experiment_id) and 
+                  f.endswith('.pt')]
+    
+    # If experiment is completed, remove all checkpoints
+    if completed:
+        removed_count = 0
+        for chk in checkpoints:
+            try:
+                chk_path = os.path.join(CHECKPOINT_DIR, chk)
+                os.remove(chk_path)
+                removed_count += 1
+            except Exception as e:
+                print(f"Error removing checkpoint {chk}: {e}")
+        
+        if removed_count > 0:
+            print(f"Removed all {removed_count} checkpoints for completed experiment {experiment_id}")
+        return
+    
+    # For incomplete experiments, keep only the latest checkpoint
+    if len(checkpoints) > keep_n:
+        # Sort by modification time (newest first)
+        sorted_checkpoints = sorted(checkpoints, 
+                                   key=lambda x: os.path.getmtime(os.path.join(CHECKPOINT_DIR, x)),
+                                   reverse=True)
+        
+        # Keep only the newest checkpoint file
+        keep_checkpoints = sorted_checkpoints[:keep_n]
+        
+        # Remove older checkpoints
+        removed_count = 0
+        for chk in sorted_checkpoints[keep_n:]:
+            try:
+                chk_path = os.path.join(CHECKPOINT_DIR, chk)
+                os.remove(chk_path)
+                removed_count += 1
+            except Exception as e:
+                print(f"Error removing checkpoint {chk}: {e}")
+        
+        if removed_count > 0:
+            print(f"Removed {removed_count} old checkpoints for experiment {experiment_id}")
+
+
 def save_checkpoint(checkpoint_path, model, optimizer, scheduler, epoch, global_step, training_metrics, token_dict, label_encoder, hyperparams):
     """Save training checkpoint to resume later"""
     # Get model state dict (handle DataParallel)
@@ -46,8 +96,8 @@ def save_checkpoint(checkpoint_path, model, optimizer, scheduler, epoch, global_
         'hyperparams': hyperparams
     }
     
-    # Save checkpoint
-    torch.save(checkpoint, checkpoint_path)
+    # Save checkpoint using pickle protocol 4 for better compatibility
+    torch.save(checkpoint, checkpoint_path, _use_new_zipfile_serialization=True, pickle_protocol=4)
     print(f"Checkpoint saved at {checkpoint_path}")
 
 
@@ -57,24 +107,36 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None):
         print(f"No checkpoint found at {checkpoint_path}")
         return None
     
-    # Load checkpoint
-    checkpoint = torch.load(checkpoint_path)
-    
-    # Load model weights (handle DataParallel)
-    if isinstance(model, nn.DataParallel):
-        model.module.load_state_dict(checkpoint['model_state_dict'])
-    else:
-        model.load_state_dict(checkpoint['model_state_dict'])
-    
-    # Load optimizer and scheduler if provided
-    if optimizer is not None:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    
-    if scheduler is not None:
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-    
-    print(f"Checkpoint loaded from {checkpoint_path} (epoch {checkpoint['epoch']})")
-    return checkpoint
+    try:
+        # Load checkpoint with weights_only=False for PyTorch 2.6+ compatibility
+        # This is safe in our controlled environment
+        checkpoint = torch.load(checkpoint_path, weights_only=False, map_location='cpu')
+        
+        # Load model weights (handle DataParallel)
+        if isinstance(model, nn.DataParallel):
+            model.module.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # Load optimizer and scheduler if provided
+        if optimizer is not None:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        if scheduler is not None:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        
+        # Print checkpoint info
+        training_progress = f"Epoch {checkpoint['epoch']}/{checkpoint.get('hyperparams', {}).get('epochs', '?')}"
+        accuracy = checkpoint.get('training_metrics', {}).get('val_accuracy', [])
+        accuracy_info = f", Accuracy: {accuracy[-1]:.4f}" if accuracy else ""
+        
+        print(f"Checkpoint details: {training_progress}{accuracy_info}")
+        return checkpoint
+        
+    except Exception as e:
+        print(f"❌ Error loading checkpoint: {e}")
+        print("   Try using a newer checkpoint or start fresh")
+        return None
 
 
 def get_checkpoint_path(experiment_id, epoch=None):
@@ -172,7 +234,6 @@ def train_model(data, hyperparams):
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     
     # Check for existing checkpoint
-    latest_checkpoint_path = get_checkpoint_path(experiment_id)
     start_epoch = 0
     global_step = 0
     
@@ -185,18 +246,40 @@ def train_model(data, hyperparams):
         'learning_rates': []
     }
     
-    # Try to load checkpoint if exists
-    if os.path.exists(latest_checkpoint_path):
-        print(f"Found checkpoint at {latest_checkpoint_path}. Attempting to resume training...")
+    # Check for any checkpoint for this experiment or base experiment (without timestamp)
+    print(f"Looking for checkpoints for experiment {experiment_id}...")
+    # Look for both exact experiment ID and the base ID (without timestamp)
+    base_id = experiment_id.split('_20')[0]  # Remove timestamp portion
+    exp_checkpoints = [f for f in os.listdir(CHECKPOINT_DIR) 
+                       if (f.startswith(experiment_id) or f.startswith(base_id)) and f.endswith('.pt')]
+    
+    if exp_checkpoints:
+        # Sort by modification time (newest first)
+        sorted_checkpoints = sorted(exp_checkpoints, 
+                                    key=lambda x: os.path.getmtime(os.path.join(CHECKPOINT_DIR, x)),
+                                    reverse=True)
+        
+        latest_checkpoint_path = os.path.join(CHECKPOINT_DIR, sorted_checkpoints[0])
+        print(f"✅ Found checkpoint at {latest_checkpoint_path}")
+        print(f"   Latest of {len(exp_checkpoints)} checkpoints for this experiment")
+        print(f"   Attempting to resume training...")
+        
         checkpoint = load_checkpoint(latest_checkpoint_path, model, optimizer, scheduler)
         if checkpoint:
             start_epoch = checkpoint['epoch'] + 1  # Start from next epoch
             global_step = checkpoint['global_step']
             training_metrics = checkpoint['training_metrics']
-            print(f"Resuming training from epoch {start_epoch}")
+            print(f"✅ Successfully loaded checkpoint! Resuming from epoch {start_epoch}")
+        else:
+            print("❌ Failed to load checkpoint. Starting from scratch.")
+    else:
+        print(f"No checkpoints found for experiment {experiment_id}. Starting fresh training.")
 
     # Training loop
     start_time = time.time()
+    
+    # Get experiment ID for cleanup later
+    current_experiment_id = hyperparams.get('experiment_id', 'unknown_experiment')
     
     for epoch in range(start_epoch, epochs):
             
@@ -321,5 +404,10 @@ def train_model(data, hyperparams):
         'dim_feedforward': dim_feedforward,
         'checkpoint_path': get_checkpoint_path(experiment_id)  # Add checkpoint path to metadata
     }
+    
+    # Clean up all checkpoints for completed experiment
+    print("\nCleaning up checkpoints for completed experiment...")
+    clean_old_checkpoints(current_experiment_id, completed=True)
+    print("Checkpoint cleanup complete.")
     
     return model, training_metrics, model_metadata

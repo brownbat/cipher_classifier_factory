@@ -49,6 +49,18 @@ def filter_experiments(experiments, filter_criteria):
     filtered_experiments = []
     for exp in experiments:
         include_exp = True
+        
+        # Check that experiment has required data
+        if 'hyperparams' not in exp or 'data_params' not in exp or 'metrics' not in exp:
+            include_exp = False
+            continue
+            
+        # Check that experiment has complete metrics
+        if not exp['metrics'].get('val_accuracy') or not exp['metrics'].get('training_duration'):
+            include_exp = False
+            continue
+            
+        # Check filter criteria
         for param, legal_values in filter_criteria.items():
             if param in exp['hyperparams'] and exp['hyperparams'][param] not in legal_values:
                 include_exp = False
@@ -56,8 +68,11 @@ def filter_experiments(experiments, filter_criteria):
             if param in exp['data_params'] and exp['data_params'][param] not in legal_values:
                 include_exp = False
                 break
+        
         if include_exp:
             filtered_experiments.append(exp)
+            
+    print(f"Found {len(filtered_experiments)} valid experiments out of {len(experiments)} total")
     return filtered_experiments
 
 
@@ -144,17 +159,35 @@ def write_css_to_file(css_content, filename='assets/custom_styles.css'):
 
 
 def setup_dash_app(data=None):
-    if data is None:
-        raise ValueError("No data specified for setup_dash_app()")
+    if data is None or not data:
+        print("Warning: No experiment data available to visualize")
+        # Create a simple app with a message
+        app = dash.Dash(__name__)
+        app.layout = html.Div([
+            html.H3("No experiment data available to visualize", style={'text-align': 'center'}),
+            html.P("Complete some experiments first, then run visualization.py again.")
+        ])
+        return app
 
     transformed_data = transform_data(data)
-    transformed_data_dict = {params: metrics for params, metrics in transformed_data}
+    if not transformed_data:
+        print("Warning: No valid experiment data after transformation")
+        app = dash.Dash(__name__)
+        app.layout = html.Div([
+            html.H3("No valid experiment data to visualize", style={'text-align': 'center'}),
+            html.P("Ensure your experiments have completed successfully.")
+        ])
+        return app
+
+    # Create a dictionary mapping parameter tuples to (metrics, experiment_info)
+    transformed_data_dict = {params: (metrics, exp_info) for params, metrics, exp_info in transformed_data}
+    
     param_value_map = build_param_value_map(transformed_data)
     num_metrics = len(transformed_data[0][1]) if transformed_data else 0
     column_names = [f'output{i + 1}' for i in range(num_metrics)]
     
     # Create DataFrame for graph scaling
-    df = pd.DataFrame([metrics for _, metrics in transformed_data], columns=column_names)
+    df = pd.DataFrame([metrics for _, metrics, _ in transformed_data], columns=column_names)
 
     # Identify unchanging parameters
     constant_params = {k: v for k, v in param_value_map.items() if len(v) == 1}
@@ -166,16 +199,22 @@ def setup_dash_app(data=None):
     # Find most accurate parameters
     best_params_tuple = None
     best_metric = -float("inf")  
+    best_exp_info = {}
 
-    for params_tuple, metrics_tuple in transformed_data:
-      value_to_track = metrics_tuple[1]  
-      if value_to_track > best_metric:
-        best_params_tuple = params_tuple
-        best_metric = value_to_track
+    if transformed_data:
+        for params_tuple, metrics_tuple, exp_info in transformed_data:
+            if len(metrics_tuple) > 1:  # Ensure we have at least accuracy metric
+                value_to_track = metrics_tuple[1]  
+                if value_to_track > best_metric:
+                    best_params_tuple = params_tuple
+                    best_metric = value_to_track
+                    best_exp_info = exp_info
 
     best_params_dict = {}
-    for i, param_name in enumerate(param_value_map.keys()):
-      best_params_dict[param_name] = best_params_tuple[i]
+    if best_params_tuple:
+        for i, param_name in enumerate(param_value_map.keys()):
+            if i < len(best_params_tuple):
+                best_params_dict[param_name] = best_params_tuple[i]
 
     # Reduce to the settings that are variable
     best_variables = {}
@@ -185,14 +224,18 @@ def setup_dash_app(data=None):
 
     # Construct legend content
     constant_params_info = f"Fixed Parameters: {', '.join([f'{k}: {list(v)[0]}' for k, v in constant_params.items()])}"
-    highest_accuracy_info = f"Highest Accuracy Parameters: { best_variables } with Accuracy of {best_metric}"
+    best_exp_id = best_exp_info.get('experiment_id', 'unknown')
+    best_exp_uid = best_exp_info.get('uid', 'unknown')
+    
+    highest_accuracy_info = (f"Highest Accuracy: {best_exp_id} ({best_exp_uid}) - "
+                            f"Parameters: {best_variables} with Accuracy of {best_metric:.4f}")
 
     colors = generate_colors(num_params)
     slider_css = generate_slider_css(num_params, colors)
     write_css_to_file(slider_css)
 
     # Extracting metric values for graph scaling
-    metrics = [values for _, values in transformed_data]
+    metrics = [values for _, values, _ in transformed_data]
     accuracy_values = [m[1] for m in metrics]  # Assuming accuracy is the second metric
     training_duration_values = [m[0] for m in metrics]  # Assuming training duration is the first metric
 
@@ -265,7 +308,6 @@ def setup_dash_app(data=None):
         # Reconstruct the complete key
         current_key = tuple(variable_values.get(param_name, constant_values_template[idx]) 
                             for idx, param_name in enumerate(param_value_map.keys()))
-
         
         if current_key not in transformed_data_dict:
             # Handle case where the parameter set hasn't been tested
@@ -276,9 +318,19 @@ def setup_dash_app(data=None):
                 font=dict(size=16, color="blue"))
         else:
             # Handle case where we have data for this parameter set
-            current_output1, current_output2, _ = transformed_data_dict[current_key]
+            (current_metrics, current_exp_info_dict) = transformed_data_dict[current_key]
+            current_output1, current_output2 = current_metrics[0], current_metrics[1]
+            
+            # Extract experiment details for title
+            exp_id = current_exp_info_dict.get('experiment_id', 'unknown')
+            exp_uid = current_exp_info_dict.get('uid', 'unknown')
+            
+            # Create a detailed title with experiment info
+            fig_title = f"Experiment: {exp_id} (UID: {exp_uid}) - Training: {current_output1:.2f}s, Accuracy: {current_output2:.4f}"
+            
             fig = px.scatter(x=[current_output1], y=[current_output2], 
-                             labels={'x':'Training Time', 'y':'Accuracy'})
+                             labels={'x':'Training Time', 'y':'Accuracy'},
+                             title=fig_title)
             fig.update_traces(marker=dict(size=15, color='black'))
 
             # Graph scaling based on DataFrame
@@ -309,10 +361,19 @@ def setup_dash_app(data=None):
 
                     # Check if the next_key exists in transformed_data_dict
                     if next_key in transformed_data_dict:
-                        ghost_output1, ghost_output2, _ = transformed_data_dict[next_key]
+                        (next_metrics, next_exp_info) = transformed_data_dict[next_key]
+                        ghost_output1, ghost_output2 = next_metrics[0], next_metrics[1]
+                        
+                        # Get experiment ID for ghost point
+                        ghost_exp_id = next_exp_info.get('experiment_id', 'unknown')
                         
                         # Add ghost point to the plot with hover info displaying original values
-                        label = f'Ghost Point for {param_name} (Param{idx + 1})'
+                        label = f'{ghost_exp_id}: {param_name}={next_value}'
+                        hover_text = (f"Experiment: {ghost_exp_id}<br>" + 
+                                    f"UID: {next_exp_info.get('uid', 'unknown')}<br>" +
+                                    f"Training Time: {ghost_output1:.2f}s<br>" +
+                                    f"Accuracy: {ghost_output2:.4f}")
+                        
                         fig.add_scatter(
                             x=[ghost_output1],
                             y=[ghost_output2],
@@ -322,7 +383,7 @@ def setup_dash_app(data=None):
                                 color=colors[idx % len(colors)],
                                 opacity=0.4),
                             name=label,
-                            hovertext=f'{label}: ({ghost_output1}, {ghost_output2})',
+                            hovertext=hover_text,
                             hoverinfo='text')
                         # Add lines to ghost points for visibility
                         fig.add_shape(type='line',
@@ -346,7 +407,7 @@ def transform_data(data, use_cache=True):
         use_cache: Whether to use cached results if available
         
     Returns:
-        List of (parameters, metrics) tuples
+        List of (parameters, metrics, experiment_info) tuples where experiment_info is a dict
     """
     # Use a simple cache key based on the number of items and first/last item hash
     if data:
@@ -395,29 +456,14 @@ def transform_data(data, use_cache=True):
                         metrics.append(value[-1])
                     else:
                         metrics.append(value)
+        
+        # Extract experiment info for display
+        experiment_info = {
+            'experiment_id': experiment.get('experiment_id', 'unknown'),
+            'uid': experiment.get('uid', 'unknown')
+        }
 
-        experiment_tuple = (tuple(params), tuple(metrics))
-        transformed_tuples.append(experiment_tuple)
-    
-    # Cache the result
-    if data:
-        _transform_cache[cache_key] = transformed_tuples
-    
-    return transformed_tuples
-
-        # Extracting metrics
-        metrics = []
-        if 'metrics' in experiment:
-            for key in ['training_duration', 'val_accuracy', 'val_loss']:
-                if key in experiment['metrics']:
-                    value = experiment['metrics'][key]
-                    # For 'val_accuracy' and 'val_loss', use the last value
-                    if key in ['val_accuracy', 'val_loss'] and isinstance(value, list):
-                        metrics.append(value[-1])
-                    else:
-                        metrics.append(value)
-
-        experiment_tuple = (tuple(params), tuple(metrics))
+        experiment_tuple = (tuple(params), tuple(metrics), experiment_info)
         transformed_tuples.append(experiment_tuple)
     
     # Cache the result
@@ -435,12 +481,13 @@ def load_and_concatenate_json_files(pattern):
     return all_data
 
 
-def load_data(max_experiments=None):
+def load_data(max_experiments=None, use_strict_filters=False):
     """
     Load experiment data from JSON files and optionally limit to a maximum number of experiments.
     
     Args:
         max_experiments: Optional maximum number of experiments to include
+        use_strict_filters: If True, use strict parameter filters; if False, use looser filters
         
     Returns:
         List of filtered experiment dictionaries
@@ -451,38 +498,36 @@ def load_data(max_experiments=None):
         json_files_pattern = "data/completed_experiments*.json"
         data = load_and_concatenate_json_files(json_files_pattern)
 
-    # Define filter parameters for transformer models
-    params = {
-        'ciphers': [[
-            "english",
-            "caesar",
-            "vigenere",
-            "beaufort",
-            "autokey",
-            "random_noise",
-            "playfair",
-            "bifid",
-            "fractionated_morse",
-            "columnar_transposition"]],
-        'num_samples': [100000],
-        'sample_length': [500],
-        'epochs': [30],
-        'd_model': [128, 256],
-        'nhead': [4, 8],
-        'num_encoder_layers': [2, 4],
-        'dim_feedforward': [512, 1024],
-        'batch_size': [32, 64],
-        'dropout_rate': [0.1, 0.2],
-        'learning_rate': [1e-4, 3e-4]
-    }
+    print(f"Loaded {len(data)} total experiments from JSON files")
     
-    data = filter_experiments(data, params)
-    
-    # Limit to max_experiments if specified
-    if max_experiments is not None and max_experiments > 0:
-        data = data[:max_experiments]
-        
-    return data
+    if use_strict_filters:
+        # Define strict filter parameters for transformer models (exact match)
+        params = {
+            'ciphers': [[
+                "english",
+                "caesar",
+                "vigenere",
+                "beaufort",
+                "autokey",
+                "random_noise",
+                "playfair",
+                "bifid",
+                "fractionated_morse",
+                "columnar_transposition"]],
+            'num_samples': [100000],
+            'sample_length': [500],
+            'epochs': [30],
+            'd_model': [128, 256],
+            'nhead': [4, 8],
+            'num_encoder_layers': [2, 4],
+            'dim_feedforward': [512, 1024],
+            'batch_size': [32, 64],
+            'dropout_rate': [0.1, 0.2],
+            'learning_rate': [1e-4, 3e-4]
+        }
+    else:
+        # Define loose filter parameters - just check that metrics exist
+        params = {}
     
     data = filter_experiments(data, params)
     
@@ -498,7 +543,7 @@ def build_param_value_map(transformed_data):
     Build a map of parameter names to their possible values based on transformed data.
     
     Args:
-        transformed_data: List of (parameters, metrics) tuples
+        transformed_data: List of (parameters, metrics, exp_info) tuples
         
     Returns:
         Dict mapping parameter names to sets of possible values
@@ -535,10 +580,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Visualization tool for transformer experiment results")
     parser.add_argument('--max_experiments', type=int, default=100,
                       help="Maximum number of experiments to include")
+    parser.add_argument('--strict', action='store_true',
+                      help="Use strict filtering for experiments")
     args = parser.parse_args()
     
     # Load data with specified limit
-    data = load_data(max_experiments=args.max_experiments)
+    data = load_data(max_experiments=args.max_experiments, use_strict_filters=args.strict)
     app = setup_dash_app(data)
     
     # Run the app

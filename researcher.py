@@ -57,6 +57,16 @@ def signal_handler(sig, frame):
     print('Use `python researcher.py` later to resume from checkpoint.')
     should_continue = False
     
+    # Keep only the latest checkpoint for incomplete experiment
+    from models.transformer.train import clean_old_checkpoints
+    checkpoint_dir = os.path.join("data", "checkpoints")
+    if os.path.exists(checkpoint_dir):
+        for filename in os.listdir(checkpoint_dir):
+            if filename.endswith('_latest.pt'):
+                experiment_id = filename.split('_latest.pt')[0]
+                clean_old_checkpoints(experiment_id, keep_n=1)
+                break
+    
     # Exit with a clean status code
     # Training code will save checkpoint before exiting
     sys.exit(0)
@@ -317,6 +327,7 @@ def append_to_experiment_file(file_path, experiment):
 def clean_up_files(
         model_directory='data/models',
         gif_directory='data/cm',
+        checkpoint_directory='data/checkpoints',
         experiments_file='data/completed_experiments.json',
         test_mode=True):
     experiments = safe_json_load(experiments_file)
@@ -338,9 +349,32 @@ def clean_up_files(
         if filename.endswith('.gif') and filename not in gif_filenames:
             files_to_delete.append(os.path.join(gif_directory, filename))
 
-    print("Files proposed for deletion:")
-    for f in files_to_delete:
-        print(f)
+    # Limit checkpoint files by experiment
+    if os.path.exists(checkpoint_directory):
+        experiment_checkpoints = {}
+        # Group checkpoints by experiment ID
+        for filename in os.listdir(checkpoint_directory):
+            if filename.endswith('.pt') and '_epoch_' in filename and not filename.endswith('_latest.pt'):
+                exp_id = filename.split('_epoch_')[0]
+                if exp_id not in experiment_checkpoints:
+                    experiment_checkpoints[exp_id] = []
+                experiment_checkpoints[exp_id].append(filename)
+        
+        # For each experiment, keep only the 3 newest checkpoints
+        for exp_id, checkpoints in experiment_checkpoints.items():
+            if len(checkpoints) > 3:
+                # Sort by modification time (newest first)
+                sorted_checkpoints = sorted(checkpoints, 
+                                          key=lambda x: os.path.getmtime(os.path.join(checkpoint_directory, x)),
+                                          reverse=True)
+                # Mark older checkpoints for deletion
+                for old_checkpoint in sorted_checkpoints[3:]:
+                    files_to_delete.append(os.path.join(checkpoint_directory, old_checkpoint))
+
+    print(f"Files proposed for deletion: {len(files_to_delete)}")
+    if files_to_delete:
+        print(f"Including {sum(1 for f in files_to_delete if 'checkpoints' in f)} checkpoint files")
+    
     if test_mode:
         print("Testing only, no files deleted")
     else:
@@ -349,7 +383,7 @@ def clean_up_files(
         if confirmed and files_to_delete:
             for f in files_to_delete:
                 os.remove(f)
-            print("All files deleted")
+            print(f"Deleted {len(files_to_delete)} files")
         else:
             print("No files deleted")
 
@@ -681,6 +715,22 @@ def main():
         # Save the experiment as completed
         append_to_experiment_file('data/completed_experiments.json', updated_exp)
         return
+    
+    # Check for existing checkpoint files (before starting)
+    checkpoint_dir = os.path.join("data", "checkpoints")
+    if os.path.exists(checkpoint_dir):
+        existing_checkpoints = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pt')]
+        if existing_checkpoints:
+            # Count unique experiment IDs
+            exp_ids = set()
+            for chk in existing_checkpoints:
+                if '_epoch_' in chk:
+                    exp_id = chk.split('_epoch_')[0]
+                    exp_ids.add(exp_id)
+            
+            print(f"Found {len(existing_checkpoints)} checkpoints for {len(exp_ids)} experiments")
+            print("Checkpoints will be automatically loaded when running experiments")
+            print("Only the 3 most recent checkpoints per experiment will be kept")
     
     # Normal queue processing mode - remove the generate_experiments call
     # Just check the pending experiments

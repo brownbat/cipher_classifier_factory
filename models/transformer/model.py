@@ -75,15 +75,17 @@ class TransformerClassifier(nn.Module):
         Returns:
             Tensor: Output logits [batch_size, num_classes]
         """
-        # Create mask for padding tokens
-        src_mask = (src == 0)  # shape: [batch_size, seq_len]
+        # Create mask for padding tokens (padding is 0)
+        padding_mask = (src == 0).to(torch.bool)  # shape: [batch_size, seq_len]
         
         # Embedding and positional encoding
         src = self.embedding(src) * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
         
-        # Pass through transformer (with batch_first=True)
-        output = self.transformer_encoder(src, src_key_padding_mask=src_mask)
+        # Pass through transformer with properly prepared mask
+        # Convert to boolean mask to avoid warnings
+        src_key_padding_mask = padding_mask.to(torch.bool)
+        output = self.transformer_encoder(src, src_key_padding_mask=src_key_padding_mask)
         
         # Use average pooling along sequence dimension
         output = output.mean(dim=1)  # [batch_size, d_model]
