@@ -168,6 +168,10 @@ def setup_dash_app(data=None):
             html.P("Complete some experiments first, then run visualization.py again.")
         ])
         return app
+    
+    # Display experiment count
+    experiment_count = len(data)
+    print(f"Visualizing {experiment_count} experiments")
 
     transformed_data = transform_data(data)
     if not transformed_data:
@@ -227,7 +231,7 @@ def setup_dash_app(data=None):
     best_exp_id = best_exp_info.get('experiment_id', 'unknown')
     best_exp_uid = best_exp_info.get('uid', 'unknown')
     
-    highest_accuracy_info = (f"Highest Accuracy: {best_exp_id} ({best_exp_uid}) - "
+    highest_accuracy_info = (f"Highest Accuracy: {best_exp_id} - "
                             f"Parameters: {best_variables} with Accuracy of {best_metric:.4f}")
 
     colors = generate_colors(num_params)
@@ -253,7 +257,10 @@ def setup_dash_app(data=None):
     }
 
     app = dash.Dash(__name__)
-    html_output = []
+    html_output = [
+        html.H3(f"Transformer Experiments Dashboard - Showing {experiment_count} Experiments", 
+                style={'text-align': 'center', 'margin-bottom': '20px'})
+    ]
     
     # Title for the app
     ciphers_list = data[0]['data_params']['ciphers']
@@ -292,7 +299,57 @@ def setup_dash_app(data=None):
             ),
         ], style={'padding': '20px 0px'}))
 
+    # Add a hidden div to store clicked data state
+    html_output.append(html.Div(id='clicked-data-store', style={'display': 'none'}))
+    
     app.layout = html.Div(html_output)
+
+    # Callback for handling click events on ghost points
+    @app.callback(
+        [Output(f'slider-{param_name}', 'value') for param_name in variable_params.keys()],
+        [Input('output-graph', 'clickData')],
+        prevent_initial_call=True
+    )
+    def handle_click_data(clickData):
+        if not clickData or 'points' not in clickData or not clickData['points']:
+            # No click data or no points in click data
+            return [dash.no_update] * len(variable_params)
+            
+        point = clickData['points'][0]
+        
+        # Only process if point has customdata (ghost point)
+        if 'customdata' not in point or not point['customdata']:
+            return [dash.no_update] * len(variable_params)
+            
+        # Get customdata string (format: "param_name:param_value")
+        custom_data = point['customdata'][0] if isinstance(point['customdata'], list) else point['customdata']
+        
+        # Check if this is a valid customdata string
+        if not isinstance(custom_data, str) or ':' not in custom_data:
+            return [dash.no_update] * len(variable_params)
+            
+        # Parse parameter name and value from custom data
+        try:
+            clicked_param_name, value_str = custom_data.split(':', 1)
+            # Convert value to the appropriate type
+            if '.' in value_str:
+                clicked_param_value = float(value_str)
+            else:
+                clicked_param_value = int(value_str)
+        except (ValueError, TypeError):
+            return [dash.no_update] * len(variable_params)
+        
+        # Create the list of new slider values
+        new_values = []
+        for param_name in variable_params.keys():
+            if param_name == clicked_param_name:
+                # Update the clicked parameter's slider value
+                new_values.append(clicked_param_value)
+            else:
+                # Keep other sliders unchanged
+                new_values.append(dash.no_update)
+                
+        return new_values
 
     @app.callback(
         Output('output-graph', 'figure'),
@@ -326,7 +383,8 @@ def setup_dash_app(data=None):
             exp_uid = current_exp_info_dict.get('uid', 'unknown')
             
             # Create a detailed title with experiment info
-            fig_title = f"Experiment: {exp_id} (UID: {exp_uid}) - Training: {current_output1:.2f}s, Accuracy: {current_output2:.4f}"
+            # Show just the experiment_id which should now be the date-based ID
+            fig_title = f"Experiment: {exp_id} - Training: {current_output1:.2f}s, Accuracy: {current_output2:.4f}"
             
             fig = px.scatter(x=[current_output1], y=[current_output2], 
                              labels={'x':'Training Time', 'y':'Accuracy'},
@@ -344,12 +402,14 @@ def setup_dash_app(data=None):
 
             # Adding ghost points
 
-            # Iterate over variable parameters to identify the next parameters/keys
+            # Iterate over variable parameters to identify both higher and lower parameter values
             for idx, (param_name, values) in enumerate(variable_params.items()):
                 sorted_values = sorted(values)
                 
                 correct_idx = list(param_value_map.keys()).index(param_name)
                 current_value = current_key[correct_idx]
+                
+                # Find next higher value (if any)
                 next_values = [v for v in sorted_values if v > current_value]
                 if next_values:
                     next_value = next_values[0]
@@ -370,9 +430,12 @@ def setup_dash_app(data=None):
                         # Add ghost point to the plot with hover info displaying original values
                         label = f'{ghost_exp_id}: {param_name}={next_value}'
                         hover_text = (f"Experiment: {ghost_exp_id}<br>" + 
-                                    f"UID: {next_exp_info.get('uid', 'unknown')}<br>" +
                                     f"Training Time: {ghost_output1:.2f}s<br>" +
-                                    f"Accuracy: {ghost_output2:.4f}")
+                                    f"Accuracy: {ghost_output2:.4f}<br>" +
+                                    f"Change: {param_name} ↑ {current_value} → {next_value}")
+                        
+                        # Store parameter information in customdata for click handling
+                        custom_data = [f"{param_name}:{next_value}"]
                         
                         fig.add_scatter(
                             x=[ghost_output1],
@@ -381,10 +444,58 @@ def setup_dash_app(data=None):
                             marker=dict(
                                 size=9,
                                 color=colors[idx % len(colors)],
-                                opacity=0.4),
+                                opacity=0.4),  # Higher opacity for higher values
                             name=label,
                             hovertext=hover_text,
-                            hoverinfo='text')
+                            hoverinfo='text',
+                            customdata=custom_data)
+                        # Add lines to ghost points for visibility
+                        fig.add_shape(type='line',
+                                      x0=current_output1, y0=current_output2,
+                                      x1=ghost_output1, y1=ghost_output2,
+                                      line=dict(color=colors[idx % len(colors)], width=2, dash='dot'))
+                
+                # Find previous lower value (if any)
+                prev_values = [v for v in sorted_values if v < current_value]
+                if prev_values:
+                    prev_value = prev_values[-1]  # Get the closest lower value
+                    
+                    # Construct the prev_key by replacing the current parameter value with prev_value
+                    prev_key = list(current_key)
+                    prev_key[correct_idx] = prev_value
+                    prev_key = tuple(prev_key)
+                    
+                    # Check if the prev_key exists in transformed_data_dict
+                    if prev_key in transformed_data_dict:
+                        (prev_metrics, prev_exp_info) = transformed_data_dict[prev_key]
+                        ghost_output1, ghost_output2 = prev_metrics[0], prev_metrics[1]
+                        
+                        # Get experiment ID for ghost point
+                        ghost_exp_id = prev_exp_info.get('experiment_id', 'unknown')
+                        
+                        # Add ghost point to the plot with hover info displaying original values
+                        label = f'{ghost_exp_id}: {param_name}={prev_value}'
+                        hover_text = (f"Experiment: {ghost_exp_id}<br>" + 
+                                    f"Training Time: {ghost_output1:.2f}s<br>" +
+                                    f"Accuracy: {ghost_output2:.4f}<br>" +
+                                    f"Change: {param_name} ↓ {current_value} → {prev_value}")
+                        
+                        # Store parameter information in customdata for click handling
+                        # We'll use a string format that can be parsed reliably, inside an array
+                        custom_data = [f"{param_name}:{prev_value}"]
+                        
+                        fig.add_scatter(
+                            x=[ghost_output1],
+                            y=[ghost_output2],
+                            mode='markers',
+                            marker=dict(
+                                size=9,
+                                color=colors[idx % len(colors)],
+                                opacity=0.2),  # Lower opacity for lower values
+                            name=label,
+                            hovertext=hover_text,
+                            hoverinfo='text',
+                            customdata=custom_data)
                         # Add lines to ghost points for visibility
                         fig.add_shape(type='line',
                                       x0=current_output1, y0=current_output2,
@@ -576,16 +687,146 @@ def build_param_value_map(transformed_data):
 # Parse command line arguments
 import argparse
 
+def parse_filter_string(filter_str):
+    """
+    Parse a filter string into a structured filter dictionary.
+    Format: "param1=val1,val2;param2=val3,val4"
+    
+    Example: "epochs=20,40;d_model=128;dropout_rate=0.1"
+    Returns: {
+        'hyperparams': {
+            'epochs': [20, 40],
+            'd_model': [128],
+            'dropout_rate': [0.1]
+        }
+    }
+    """
+    filter_params = {'hyperparams': {}}
+    
+    # Split by semicolons to get parameter groups
+    param_groups = filter_str.split(';')
+    
+    for group in param_groups:
+        if not group.strip():
+            continue
+            
+        # Split by equals sign to get parameter name and values
+        if '=' in group:
+            param, values = group.split('=', 1)
+            param = param.strip()
+            
+            # Split values by comma
+            value_strings = [v.strip() for v in values.split(',')]
+            parsed_values = []
+            
+            for val in value_strings:
+                if not val:
+                    continue
+                    
+                try:
+                    # Try to convert to appropriate type
+                    if '.' in val:
+                        parsed_values.append(float(val))
+                    else:
+                        parsed_values.append(int(val))
+                except ValueError:
+                    parsed_values.append(val)
+            
+            filter_params['hyperparams'][param] = parsed_values
+    
+    return filter_params
+
+
+def load_filter_config(filter_arg):
+    """
+    Load filter configuration from a string or file.
+    
+    Args:
+        filter_arg: Either a filter string or path to a JSON file
+        
+    Returns:
+        Dictionary containing filter parameters
+    """
+    # Check if the argument is a file path
+    if os.path.exists(filter_arg) and filter_arg.endswith('.json'):
+        try:
+            with open(filter_arg, 'r') as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            print(f"ERROR: Filter file '{filter_arg}' is not valid JSON")
+            return {}
+        except Exception as e:
+            print(f"ERROR: Could not load filter file: {e}")
+            return {}
+    else:
+        # Treat as a filter string
+        try:
+            return parse_filter_string(filter_arg)
+        except Exception as e:
+            print(f"ERROR: Could not parse filter string: {e}")
+            return {}
+
+
+def apply_filters(experiments, filter_params):
+    """
+    Filter experiments based on parameter criteria.
+    
+    Args:
+        experiments: List of experiment dictionaries
+        filter_params: Dictionary with 'hyperparams' and/or 'data_params' keys
+                      containing filter criteria
+    
+    Returns:
+        Filtered list of experiments
+    """
+    filtered = []
+    
+    for exp in experiments:
+        include = True
+        
+        # Filter by hyperparameters
+        if 'hyperparams' in filter_params:
+            for param, values in filter_params['hyperparams'].items():
+                if param in exp.get('hyperparams', {}):
+                    if exp['hyperparams'][param] not in values:
+                        include = False
+                        break
+        
+        # Filter by data parameters
+        if include and 'data_params' in filter_params:
+            for param, values in filter_params['data_params'].items():
+                if param in exp.get('data_params', {}):
+                    if exp['data_params'][param] not in values:
+                        include = False
+                        break
+        
+        if include:
+            filtered.append(exp)
+    
+    return filtered
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Visualization tool for transformer experiment results")
     parser.add_argument('--max_experiments', type=int, default=100,
                       help="Maximum number of experiments to include")
     parser.add_argument('--strict', action='store_true',
                       help="Use strict filtering for experiments")
+    parser.add_argument('--filter', type=str,
+                      help="Filter criteria: either a filter string (e.g., \"epochs=40;d_model=128,256\") or path to a JSON config file")
     args = parser.parse_args()
     
     # Load data with specified limit
     data = load_data(max_experiments=args.max_experiments, use_strict_filters=args.strict)
+    
+    # Apply filter if provided
+    if args.filter:
+        filter_params = load_filter_config(args.filter)
+        if filter_params:
+            print(f"Applying filters: {filter_params}")
+            data = apply_filters(data, filter_params)
+            print(f"Showing {len(data)} experiments after filtering")
+    
     app = setup_dash_app(data)
     
     # Run the app

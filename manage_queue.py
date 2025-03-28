@@ -6,6 +6,12 @@ This script manages the experiment queue for the cipher classifier project.
 It can generate permutations of experiment parameters and add them to the queue,
 replace the current queue with new experiments, or clear the queue entirely.
 
+IMPORTANT: For each parameter (like d_model, nhead, etc.) where you provide multiple
+values separated by commas, the script will create a separate experiment for EACH
+COMBINATION of parameter values. This means that if you specify:
+    --d_model 128,256 --nhead 4,8 --epochs 20,40
+You will get 8 experiments (2×2×2 = 8 combinations)
+
 Usage:
     # Add experiments to queue (default)
     python manage_queue.py --d_model 128,256 --nhead 4,8
@@ -15,6 +21,9 @@ Usage:
 
     # Clear all experiments from queue
     python manage_queue.py --clear
+    
+    # List current experiments in queue
+    python manage_queue.py --list
 """
 
 import os
@@ -32,17 +41,17 @@ os.chdir(dir_path)
 # Default parameter settings for experiments
 DEFAULT_PARAMS = {
     'ciphers': [_get_cipher_names()],
-    'num_samples': [100000],
-    'sample_length': [500],
-    'epochs': [30],
+    'num_samples': [100000],  # Common alternatives: 50000, 200000
+    'sample_length': [500],   # Common alternatives: 250, 1000
+    'epochs': [30],           # Common alternatives: 20, 40, 60 for more training
     # Transformer hyperparameters
-    'd_model': [128, 256],  # Embedding dimension
-    'nhead': [4, 8],  # Number of attention heads
-    'num_encoder_layers': [2, 4],  # Number of transformer layers
-    'dim_feedforward': [512, 1024],  # Hidden dimension in feed forward network
-    'batch_size': [32, 64],
-    'dropout_rate': [0.1, 0.2],
-    'learning_rate': [1e-4, 3e-4]  # Lower learning rates for transformers
+    'd_model': [128],         # Common alternatives: 64, 256, 512
+    'nhead': [4],             # Common alternatives: 2, 8 (must divide d_model evenly)
+    'num_encoder_layers': [2],  # Common alternatives: 1, 3, 4, 6
+    'dim_feedforward': [512],   # Common alternatives: 256, 1024, 2048
+    'batch_size': [32],         # Common alternatives: 16, 64, 128
+    'dropout_rate': [0.1],      # Common alternatives: 0.05, 0.2, 0.3
+    'learning_rate': [1e-4]     # Common alternatives: 3e-4, 5e-5, 1e-3
 }
 
 # File paths
@@ -179,6 +188,42 @@ def get_experiment_key(exp):
     return '_'.join(key_parts)
 
 
+def get_next_experiment_counter(date_prefix):
+    """
+    Find the highest experiment counter for the given date prefix
+    in both pending and completed experiments.
+    
+    Args:
+        date_prefix: Date prefix string (YYYYMMDD)
+        
+    Returns:
+        Next available counter value (integer)
+    """
+    # Load all existing experiments (both pending and completed)
+    pending_experiments = safe_json_load(PENDING_EXPERIMENTS_FILE)
+    completed_experiments = safe_json_load(COMPLETED_EXPERIMENTS_FILE)
+    all_experiments = pending_experiments + completed_experiments
+    
+    # Find the highest counter for the given date prefix
+    highest_counter = 0
+    for exp in all_experiments:
+        exp_id = exp.get('experiment_id', '')
+        
+        # Check if this experiment ID matches our date prefix
+        if exp_id.startswith(date_prefix):
+            # Extract the counter part
+            try:
+                # Split by hyphen and convert the last part to int
+                counter_str = exp_id.split('-')[-1]
+                counter = int(counter_str)
+                highest_counter = max(highest_counter, counter)
+            except (ValueError, IndexError):
+                # Skip if we can't parse the counter
+                continue
+    
+    # Return the next available counter
+    return highest_counter + 1
+
 def generate_experiments(params):
     """
     Generate experiment configurations from parameter combinations.
@@ -189,6 +234,13 @@ def generate_experiments(params):
     Returns:
         List of experiment configurations
     """
+    # Generate a date-based session ID to avoid experiment name collisions
+    session_date = datetime.datetime.now().strftime("%Y%m%d")
+    
+    # Get the starting counter for today's experiments
+    start_counter = get_next_experiment_counter(session_date)
+    print(f"Starting new experiments at counter {start_counter} for date {session_date}")
+    
     # Extract the keys and values from the params dictionary
     keys = list(params.keys())
     values = list(params.values())
@@ -220,9 +272,9 @@ def generate_experiments(params):
             'learning_rate': param_dict['learning_rate']
         }
         
-        # Create the experiment configuration
+        # Create the experiment configuration with date-based ID to avoid collisions
         experiment = {
-            'experiment_id': f'exp_{i+1}',
+            'experiment_id': f'{session_date}-{start_counter + i}',
             'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'data_params': data_params,
             'hyperparams': hyperparams
@@ -272,16 +324,27 @@ def list_queue():
     for i, exp in enumerate(pending_experiments):
         # Extract key parameters for display
         exp_id = exp.get('experiment_id', f'Unknown_{i}')
-        ciphers = ','.join(exp.get('data_params', {}).get('ciphers', ['unknown'])[0][:3])
-        if len(exp.get('data_params', {}).get('ciphers', ['unknown'])[0]) > 3:
-            ciphers += "..."
         
+        # Get important parameters for display
         params = exp.get('hyperparams', {})
+        epochs = params.get('epochs', 'unknown')
         d_model = params.get('d_model', 'unknown')
         nhead = params.get('nhead', 'unknown')
         layers = params.get('num_encoder_layers', 'unknown')
+        ff_dim = params.get('dim_feedforward', 'unknown')
+        lr = params.get('learning_rate', 'unknown')
         
-        print(f"{i+1}. {exp_id}: d_model={d_model}, nhead={nhead}, layers={layers}, ciphers={ciphers}")
+        # Format the learning rate nicely if it's scientific notation
+        if isinstance(lr, float) and lr < 0.001:
+            lr_str = f"{lr:.1e}"
+        else:
+            lr_str = str(lr)
+        
+        # Add batch size to the display
+        batch = params.get('batch_size', 'unknown')
+        
+        # Print a clean summary with the new date-based ID format including batch size
+        print(f"{i+1}. {exp_id}: d={d_model}, h={nhead}, l={layers}, ff={ff_dim}, bs={batch}, lr={lr_str}, e={epochs}")
 
 
 def clear_queue():

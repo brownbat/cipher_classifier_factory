@@ -242,16 +242,17 @@ def run_experiment(exp):
     if 'num_samples' not in data_params:
         raise ValueError(f"'num_samples' is missing in data_params for experiment {exp.get('experiment_id')}")
 
-    # Append timestamp to the experiment ID for uniqueness
+    # Get timestamp for recording when the experiment actually ran
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     data = get_data(data_params)
     
-    # Create unique experiment ID for this run
-    unique_id = f'{exp["experiment_id"]}_{timestamp}'
-    exp['uid'] = unique_id
+    # Store the timestamp but use the original experiment ID
+    # (which is already unique with our new date-based naming convention)
+    exp['uid'] = exp["experiment_id"]  # Use the experiment ID as the UID
+    exp['run_timestamp'] = timestamp   # Just record when it was run
     
     # Add experiment ID to hyperparams for checkpointing
-    hyperparams['experiment_id'] = unique_id
+    hyperparams['experiment_id'] = exp["experiment_id"]
 
     print(f"Running experiment: {exp['experiment_id']}...")
     model, metrics, model_metadata = train_model(data, hyperparams)
@@ -260,17 +261,16 @@ def run_experiment(exp):
     # Update experiment details with results
     exp['training_time'] = timestamp
     print(f"Experiment {exp['experiment_id']} completed")
-    print(f"  now called: {exp['uid']}")
 
-    # Save the model
-    model_filename = f'data/models/{unique_id}.pt'
+    # Save the model - using experiment ID which is already unique
+    model_filename = f'data/models/{exp["experiment_id"]}.pt'
     model_dir = os.path.dirname(model_filename)
     os.makedirs(model_dir, exist_ok=True)  # create directory if it doesn't exist
     exp['model_filename'] = model_filename
     torch.save(model, model_filename)
     
     # Save model metadata
-    metadata_filename = f'data/models/{unique_id}_metadata.pkl'
+    metadata_filename = f'data/models/{exp["experiment_id"]}_metadata.pkl'
     exp['metadata_filename'] = metadata_filename
     with open(metadata_filename, 'wb') as f:
         import pickle
@@ -459,12 +459,13 @@ def reset_pending_experiments(file_path="data/pending_experiments.json"):
         'experiment_id': 'exp_1',
         'hyperparams': {
             'batch_size': 32,
-            'dropout_rate': 0.015,
-            'embedding_dim': 32,
+            'dropout_rate': 0.1,
             'epochs': 3,
-            'hidden_dim': 64,
-            'learning_rate': 0.003,
-            'num_layers': 10
+            'd_model': 128,
+            'nhead': 4,
+            'num_encoder_layers': 2,
+            'dim_feedforward': 512,
+            'learning_rate': 1e-4
         }
     }
 
@@ -506,10 +507,6 @@ def generate_experiments(settings={}, pending_file='data/pending_experiments.jso
         'nhead': 8,
         'num_encoder_layers': 2,
         'dim_feedforward': 512,
-        # LSTM-specific defaults (for backward compatibility)
-        'num_layers': 10,
-        'embedding_dim': 32,
-        'hidden_dim': 64
     }
     default_params.update(settings)
     settings.update(default_params)
@@ -730,7 +727,6 @@ def main():
             
             print(f"Found {len(existing_checkpoints)} checkpoints for {len(exp_ids)} experiments")
             print("Checkpoints will be automatically loaded when running experiments")
-            print("Only the 3 most recent checkpoints per experiment will be kept")
     
     # Normal queue processing mode - remove the generate_experiments call
     # Just check the pending experiments
@@ -767,7 +763,34 @@ def main():
         experiment_details = get_experiment_details(updated_exp)
         num_completed += 1
         num_pending -= 1
-        experiment_details += f"\n{num_completed} experiments completed, {num_pending} remaining"
+        
+        # Calculate estimated time to completion
+        est_time_str = ""
+        if num_pending > 0:
+            # Get durations from completed experiments
+            completed_experiments = safe_json_load('data/completed_experiments.json')
+            durations = [exp.get('metrics', {}).get('training_duration', 0) 
+                        for exp in completed_experiments 
+                        if 'metrics' in exp and 'training_duration' in exp.get('metrics', {})]
+            
+            # Use the most recent 10 experiments (or all if fewer than 10)
+            recent_durations = durations[-10:] if len(durations) >= 10 else durations
+            
+            if recent_durations:
+                avg_duration = sum(recent_durations) / len(recent_durations)
+                total_est_seconds = avg_duration * num_pending
+                
+                # Convert to hours and minutes
+                est_hours = int(total_est_seconds // 3600)
+                est_minutes = int((total_est_seconds % 3600) // 60)
+                
+                # Format the time string based on duration
+                if est_hours > 0:
+                    est_time_str = f"\nEstimated time to complete remaining experiments: {est_hours}h {est_minutes}m"
+                else:
+                    est_time_str = f"\nEstimated time to complete remaining experiments: {est_minutes}m"
+        
+        experiment_details += f"\n{num_completed} experiments completed, {num_pending} remaining{est_time_str}"
         print("***")
         print(experiment_details)
         print("***\n")

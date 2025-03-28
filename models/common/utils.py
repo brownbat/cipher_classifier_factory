@@ -1,5 +1,5 @@
 """
-Common utility functions used by both LSTM and transformer implementations.
+Common utility functions for the cipher classifier.
 """
 import hashlib
 import re

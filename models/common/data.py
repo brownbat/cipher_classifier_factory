@@ -1,5 +1,5 @@
 """
-Common data handling functions used by both LSTM and transformer implementations.
+Common data handling functions for the cipher classifier.
 """
 import torch
 import pandas as pd

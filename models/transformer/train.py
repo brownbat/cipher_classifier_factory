@@ -11,6 +11,7 @@ import os
 import json
 import signal
 import sys
+import hashlib
 
 from models.transformer.model import TransformerClassifier
 from models.common.data import load_and_preprocess_data, create_data_loaders
@@ -31,9 +32,12 @@ def clean_old_checkpoints(experiment_id, keep_n=1, completed=False):
     For incomplete experiments: keep only the latest checkpoint.
     For completed experiments: remove all checkpoints.
     """
-    # Get all checkpoints for this experiment
+    # Get base experiment ID (without timestamp)
+    base_id = experiment_id.split('_20')[0]
+    
+    # Get all checkpoints for this experiment (including those with hash codes)
     checkpoints = [f for f in os.listdir(CHECKPOINT_DIR) 
-                  if f.startswith(experiment_id) and 
+                  if (f.startswith(experiment_id) or f.startswith(base_id)) and 
                   f.endswith('.pt')]
     
     # If experiment is completed, remove all checkpoints
@@ -98,7 +102,12 @@ def save_checkpoint(checkpoint_path, model, optimizer, scheduler, epoch, global_
     
     # Save checkpoint using pickle protocol 4 for better compatibility
     torch.save(checkpoint, checkpoint_path, _use_new_zipfile_serialization=True, pickle_protocol=4)
-    print(f"Checkpoint saved at {checkpoint_path}")
+    
+    # Remove any other checkpoint files for this experiment
+    clean_old_checkpoints(hyperparams.get('experiment_id', 'unknown_experiment'), keep_n=1, completed=False)
+    
+    # Don't print every checkpoint save to reduce log noise
+    print(f"Checkpoint updated for experiment {hyperparams.get('experiment_id', 'unknown_experiment')}")
 
 
 def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None):
@@ -125,12 +134,14 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None):
         if scheduler is not None:
             scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         
-        # Print checkpoint info
-        training_progress = f"Epoch {checkpoint['epoch']}/{checkpoint.get('hyperparams', {}).get('epochs', '?')}"
+        # Print checkpoint info - store 0-based internally, display 1-based
+        completed_epoch = checkpoint['epoch'] + 1  # Convert to 1-based for display
+        total_epochs = checkpoint.get('hyperparams', {}).get('epochs', '?')
+        training_progress = f"Epoch {completed_epoch}/{total_epochs}"
         accuracy = checkpoint.get('training_metrics', {}).get('val_accuracy', [])
         accuracy_info = f", Accuracy: {accuracy[-1]:.4f}" if accuracy else ""
         
-        print(f"Checkpoint details: {training_progress}{accuracy_info}")
+        print(f"Checkpoint details: {training_progress}{accuracy_info} (completed)")
         return checkpoint
         
     except Exception as e:
@@ -139,11 +150,34 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None):
         return None
 
 
-def get_checkpoint_path(experiment_id, epoch=None):
-    """Get checkpoint path for a given experiment ID and optional epoch"""
-    if epoch is not None:
-        return os.path.join(CHECKPOINT_DIR, f"{experiment_id}_epoch_{epoch}.pt")
+def generate_config_hash(hyperparams):
+    """
+    Generate a hash from the model configuration parameters.
+    This helps ensure checkpoints are only loaded for matching architectures.
+    """
+    # Extract key parameters that define the model architecture
+    key_params = {
+        'd_model': hyperparams.get('d_model', 128),
+        'nhead': hyperparams.get('nhead', 8),
+        'num_encoder_layers': hyperparams.get('num_encoder_layers', 2),
+        'dim_feedforward': hyperparams.get('dim_feedforward', 512),
+        'vocab_size': hyperparams.get('vocab_size', 27)
+    }
+    # Create a stable string representation and hash it
+    param_str = json.dumps(key_params, sort_keys=True)
+    return hashlib.md5(param_str.encode()).hexdigest()[:8]  # First 8 chars of hash
+
+def get_checkpoint_path(experiment_id, hyperparams=None, epoch=None):
+    """
+    Get checkpoint path for a given experiment ID and hyperparameters.
+    Includes config hash if hyperparams are provided to ensure architecture matching.
+    """
+    if hyperparams:
+        # Generate a hash of the configuration to prevent architecture mismatches
+        config_hash = generate_config_hash(hyperparams)
+        return os.path.join(CHECKPOINT_DIR, f"{experiment_id}_{config_hash}_latest.pt")
     else:
+        # Fallback for backward compatibility
         return os.path.join(CHECKPOINT_DIR, f"{experiment_id}_latest.pt")
 
 
@@ -246,12 +280,23 @@ def train_model(data, hyperparams):
         'learning_rates': []
     }
     
-    # Check for any checkpoint for this experiment or base experiment (without timestamp)
+    # Check for any checkpoint for this experiment with matching architecture
     print(f"Looking for checkpoints for experiment {experiment_id}...")
-    # Look for both exact experiment ID and the base ID (without timestamp)
+    
+    # Generate config hash for this experiment
+    config_hash = generate_config_hash(hyperparams)
+    print(f"Architecture hash: {config_hash}")
+    
+    # Look for checkpoints with matching experiment ID base and architecture hash
     base_id = experiment_id.split('_20')[0]  # Remove timestamp portion
+    
+    # Only look for exact architecture matches using the hash
     exp_checkpoints = [f for f in os.listdir(CHECKPOINT_DIR) 
-                       if (f.startswith(experiment_id) or f.startswith(base_id)) and f.endswith('.pt')]
+                      if ((f.startswith(experiment_id) or f.startswith(base_id)) and 
+                         f"_{config_hash}_" in f and 
+                         f.endswith('.pt'))]
+    
+    # No fallback to incompatible checkpoints - this would only cause load errors
     
     if exp_checkpoints:
         # Sort by modification time (newest first)
@@ -259,24 +304,54 @@ def train_model(data, hyperparams):
                                     key=lambda x: os.path.getmtime(os.path.join(CHECKPOINT_DIR, x)),
                                     reverse=True)
         
-        latest_checkpoint_path = os.path.join(CHECKPOINT_DIR, sorted_checkpoints[0])
-        print(f"✅ Found checkpoint at {latest_checkpoint_path}")
-        print(f"   Latest of {len(exp_checkpoints)} checkpoints for this experiment")
-        print(f"   Attempting to resume training...")
+        # Get current target epochs
+        current_target_epochs = hyperparams.get('epochs', 0)
+        valid_checkpoint_path = None
         
-        checkpoint = load_checkpoint(latest_checkpoint_path, model, optimizer, scheduler)
-        if checkpoint:
-            start_epoch = checkpoint['epoch'] + 1  # Start from next epoch
-            global_step = checkpoint['global_step']
-            training_metrics = checkpoint['training_metrics']
-            print(f"✅ Successfully loaded checkpoint! Resuming from epoch {start_epoch}")
+        # Find the newest checkpoint that doesn't exceed our target epoch count
+        for checkpoint_file in sorted_checkpoints:
+            checkpoint_path = os.path.join(CHECKPOINT_DIR, checkpoint_file)
+            try:
+                # Quickly peek at checkpoint to check epoch
+                checkpoint_data = torch.load(checkpoint_path, weights_only=False, map_location='cpu')
+                checkpoint_epoch = checkpoint_data.get('epoch', 0)
+                
+                # Only use if epoch count is less than our target
+                if checkpoint_epoch < current_target_epochs:
+                    valid_checkpoint_path = checkpoint_path
+                    break
+            except Exception:
+                # Skip problematic checkpoints
+                continue
+        
+        # If we found a valid checkpoint, use it
+        if valid_checkpoint_path:
+            print(f"✅ Found checkpoint at {valid_checkpoint_path}")
+            checkpoint = load_checkpoint(valid_checkpoint_path, model, optimizer, scheduler)
+            if checkpoint:
+                start_epoch = checkpoint['epoch'] + 1  # Start from next epoch
+                global_step = checkpoint['global_step']
+                training_metrics = checkpoint['training_metrics']
+                
+                # Extract the previous cumulative duration if available
+                if 'training_duration' in training_metrics:
+                    cumulative_duration = training_metrics['training_duration']
+                    print(f"✅ Resuming with epoch {start_epoch+1}/{epochs} (previous duration: {cumulative_duration:.1f}s)")
+                else:
+                    print(f"✅ Resuming with epoch {start_epoch+1}/{epochs}")
+            else:
+                print("❌ Failed to load checkpoint. Starting from scratch.")
         else:
-            print("❌ Failed to load checkpoint. Starting from scratch.")
+            print("No suitable checkpoints found (all checkpoints at/beyond target epoch count)")
+            print("Starting fresh training")
     else:
         print(f"No checkpoints found for experiment {experiment_id}. Starting fresh training.")
-
-    # Training loop
-    start_time = time.time()
+        
+    # Initialize cumulative duration (will be updated from checkpoint if available)
+    cumulative_duration = 0.0
+    
+    # Track starting time for accurate duration calculation on interruption
+    session_start_time = time.time()
     
     # Get experiment ID for cleanup later
     current_experiment_id = hyperparams.get('experiment_id', 'unknown_experiment')
@@ -366,17 +441,12 @@ def train_model(data, hyperparams):
               + f"{avg_val_loss:.4f}, Validation Accuracy: "
               + f"{val_accuracy:.4f}")
 
-        # Save checkpoint periodically
+        # Save only the latest checkpoint periodically
         if (epoch + 1) % CHECKPOINT_FREQ == 0:
-            checkpoint_path = get_checkpoint_path(experiment_id, epoch+1)
-            latest_path = get_checkpoint_path(experiment_id)
+            # Include architecture hash in the checkpoint path
+            latest_path = get_checkpoint_path(experiment_id, hyperparams)
             
-            # Save epoch-specific and latest checkpoint
-            save_checkpoint(
-                checkpoint_path, model, optimizer, scheduler, 
-                epoch, global_step, training_metrics, 
-                token_dict, label_encoder, hyperparams
-            )
+            # Save only the latest checkpoint (no epoch-specific checkpoints)
             save_checkpoint(
                 latest_path, model, optimizer, scheduler, 
                 epoch, global_step, training_metrics, 
@@ -390,8 +460,13 @@ def train_model(data, hyperparams):
 
     # Record training duration
     end_time = time.time()
-    training_duration = end_time - start_time
-    training_metrics['training_duration'] = training_duration
+    session_duration = end_time - session_start_time
+    
+    # Add this session's duration to any previously accumulated duration
+    total_duration = cumulative_duration + session_duration
+    training_metrics['training_duration'] = total_duration
+    
+    print(f"Training completed. Session duration: {session_duration:.1f}s, Total duration: {total_duration:.1f}s")
     
     # Save model metadata along with the model
     model_metadata = {
@@ -402,7 +477,8 @@ def train_model(data, hyperparams):
         'nhead': nhead,
         'num_encoder_layers': num_encoder_layers,
         'dim_feedforward': dim_feedforward,
-        'checkpoint_path': get_checkpoint_path(experiment_id)  # Add checkpoint path to metadata
+        'checkpoint_path': get_checkpoint_path(experiment_id, hyperparams),  # Add checkpoint path to metadata
+        'config_hash': generate_config_hash(hyperparams)  # Include the config hash for reference
     }
     
     # Clean up all checkpoints for completed experiment
