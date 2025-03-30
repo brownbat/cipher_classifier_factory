@@ -1,0 +1,846 @@
+{
+    "english_vigenere_caesar_columnar_transposition_random_noise_15000_500": {
+        "filename": "data/feathers/20231217_072618.feather",
+        "ciphers": [
+            "english",
+            "vigenere",
+            "caesar",
+            "columnar_transposition",
+            "random_noise"
+        ],
+        "samples": 15000,
+        "sample_length": 500,
+        "hash": "99aefe0f59f9e127b3ef1cc80854b6ef70bcb23934b75e1b4497f4f19db3b2b5",
+        "timestamp": "2023-12-17 07:26:18"
+    },
+    "english_vigenere_caesar_columnar_transposition_random_noise_10000_500": {
+        "filename": "data/feathers/20231217_190052.feather",
+        "ciphers": [
+            "english",
+            "vigenere",
+            "caesar",
+            "columnar_transposition",
+            "random_noise"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "e40942064f6f5537c71d6345de029a1a0136de615a07eaf1d3a05eb3ed0065bb",
+        "timestamp": "2023-12-17 19:00:52"
+    },
+    "caesar_vigenere_english_columnar_transposition_10000_500": {
+        "filename": "data/feathers/20231219_160114.feather",
+        "ciphers": [
+            "caesar",
+            "vigenere",
+            "english",
+            "columnar_transposition"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "22edc3ad9a809a90c39166f759f06e91f0610f5665519f333c9eae01f6e8d8a8",
+        "timestamp": "2023-12-19 16:01:14"
+    },
+    "english_vigenere_caesar_columnar_transposition_random_noise_1000_200": {
+        "filename": "data/feathers/20240107_140748.feather",
+        "ciphers": [
+            "english",
+            "vigenere",
+            "caesar",
+            "columnar_transposition",
+            "random_noise"
+        ],
+        "samples": 1000,
+        "sample_length": 200,
+        "hash": "cddb6b67d59578d0cf57ae1625ce75c531cd337123923439348e31265d3da583",
+        "timestamp": "2024-01-07 14:07:48"
+    },
+    "english__vigenere_palimpsest__vigenere_liminal_random_noise_10000_500": {
+        "filename": "data/feathers/20240111_075536.feather",
+        "ciphers": [
+            "english",
+            "_vigenere_palimpsest",
+            "_vigenere_liminal",
+            "random_noise"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "7d13de55abb248291942067ef7eb8f62ec53cc39e06cb93b78958acd1e702864",
+        "timestamp": "2024-01-11 07:55:36"
+    },
+    "caesar_vigenere_2500_500": {
+        "filename": "data/feathers/20240113_115024.feather",
+        "ciphers": [
+            "caesar",
+            "vigenere"
+        ],
+        "samples": 2500,
+        "sample_length": 500,
+        "hash": "3d51211638e9977605aa0dbc8ccde2e4958e67cfb1ffbb1a469ab749155f02d2",
+        "timestamp": "2024-01-13 11:50:24"
+    },
+    "vigenere_palinpsest_vigenere_palimpsest_10000_500": {
+        "filename": "data/feathers/20240113_115032.feather",
+        "ciphers": [
+            "vigenere_palinpsest",
+            "vigenere_palimpsest"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "f791b31b73f3d7e25887b9daa59e4b152984f2753d7192401a7f096f4b2bac62",
+        "timestamp": "2024-01-13 11:50:33"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_10000_500": {
+        "filename": "data/feathers/20240113_140145.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "c09ade7e42749e72fb10784d9ab075b17361b4d5669dc709816f7fd9abd686da",
+        "timestamp": "2024-01-13 14:01:45"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_100000_500": {
+        "filename": "data/feathers/20240113_154325.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 100000,
+        "sample_length": 500,
+        "hash": "84ad8d97a2965481f71a90b67e19f8d2c4e1638ed20f76b71f6f433268524977",
+        "timestamp": "2024-01-13 15:43:25"
+    },
+    "playfair_bifid_beaufort_autokey_vigenere_50000_500": {
+        "filename": "data/feathers/20240114_090758.feather",
+        "ciphers": [
+            "playfair",
+            "bifid",
+            "beaufort",
+            "autokey",
+            "vigenere"
+        ],
+        "samples": 50000,
+        "sample_length": 500,
+        "hash": "f22d50fe70ed5fc636a2c467bdc7d73e1131729405f902f13b9425204191800a",
+        "timestamp": "2024-01-14 09:07:59"
+    },
+    "playfair_bifid_beaufort_autokey_50000_500": {
+        "filename": "data/feathers/20240114_101628.feather",
+        "ciphers": [
+            "playfair",
+            "bifid",
+            "beaufort",
+            "autokey"
+        ],
+        "samples": 50000,
+        "sample_length": 500,
+        "hash": "c4171dee8113fdecb97780c4a4d240caa3bee2206ce0d0f5f43e705893eb3fa8",
+        "timestamp": "2024-01-14 10:16:29"
+    },
+    "playfair_bifid_english_50000_500": {
+        "filename": "data/feathers/20240114_115216.feather",
+        "ciphers": [
+            "playfair",
+            "bifid",
+            "english"
+        ],
+        "samples": 50000,
+        "sample_length": 500,
+        "hash": "c9ae812f27672c5902b3907458b74934cbc6eac6d1de27aeb0ab342dd2c361ba",
+        "timestamp": "2024-01-14 11:52:16"
+    },
+    "playfair_bifid_english_autokey_20000_500": {
+        "filename": "data/feathers/20240114_185831.feather",
+        "ciphers": [
+            "playfair",
+            "bifid",
+            "english",
+            "autokey"
+        ],
+        "samples": 20000,
+        "sample_length": 500,
+        "hash": "1faadc8e3c5c4e320d9cf893c1a4fac572512d0ce8130568eb7c4e604f92a0e4",
+        "timestamp": "2024-01-14 18:58:31"
+    },
+    "playfair_bifid_english_random_noise_20000_500": {
+        "filename": "data/feathers/20240115_013045.feather",
+        "ciphers": [
+            "playfair",
+            "bifid",
+            "english",
+            "random_noise"
+        ],
+        "samples": 20000,
+        "sample_length": 500,
+        "hash": "9b58fcb2a0c3d1ccbda9a24f8c1c41adbebde0c75620b4cd4b1dfed8d0cd44c4",
+        "timestamp": "2024-01-15 01:30:45"
+    },
+    "bifid_english_random_noise_10000_500": {
+        "filename": "data/feathers/20240115_193634.feather",
+        "ciphers": [
+            "bifid",
+            "english",
+            "random_noise"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "f2a7c2fa758719b58d6710cdc364c7888ee98ccc88ee6f893722fdd68f682fe3",
+        "timestamp": "2024-01-15 19:36:35"
+    },
+    "bifid_playfair_english_random_noise_10000_500": {
+        "filename": "data/feathers/20240115_194822.feather",
+        "ciphers": [
+            "bifid",
+            "playfair",
+            "english",
+            "random_noise"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "c9f4a74a87207bd0ca25c42f1ce818812bd8bdaef6a44eae9209e12e0396ee28",
+        "timestamp": "2024-01-15 19:48:22"
+    },
+    "bifid_playfair_10000_500": {
+        "filename": "data/feathers/20240115_201544.feather",
+        "ciphers": [
+            "bifid",
+            "playfair"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "f0fc0dc70c009af1affdb093e30d8c2db56896bd73618a8245671ca762da46db",
+        "timestamp": "2024-01-15 20:15:44"
+    },
+    "bifid_playfair_english_10000_500": {
+        "filename": "data/feathers/20240117_184817.feather",
+        "ciphers": [
+            "bifid",
+            "playfair",
+            "english"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "2ee08553e1e5658d3ec0cd92c53233f8f0f695fc40cf8623c0d84b808e7a5e05",
+        "timestamp": "2024-01-17 18:48:17"
+    },
+    "bifid_playfair_vigenere_10000_500": {
+        "filename": "data/feathers/20240117_185548.feather",
+        "ciphers": [
+            "bifid",
+            "playfair",
+            "vigenere"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "79cd05d85721d5ab0169b0b46b35c00283501e5b334c901ed0fa5f7ca5984b38",
+        "timestamp": "2024-01-17 18:55:48"
+    },
+    "bifid_playfair_random_noise_10000_500": {
+        "filename": "data/feathers/20240117_190637.feather",
+        "ciphers": [
+            "bifid",
+            "playfair",
+            "random_noise"
+        ],
+        "samples": 10000,
+        "sample_length": 500,
+        "hash": "2f319c8c0fbeed170776fecb70f5d5f4d18ba0243a6d4dd6fe482d4239793e3c",
+        "timestamp": "2024-01-17 19:06:37"
+    },
+    "bifid_playfair_vigenere_10000_1000": {
+        "filename": "data/feathers/20240117_220421.feather",
+        "ciphers": [
+            "bifid",
+            "playfair",
+            "vigenere"
+        ],
+        "samples": 10000,
+        "sample_length": 1000,
+        "hash": "5a48abededc886d4c9cfd8602c26b7ceac70e1ef002087f160c4490241c8d62b",
+        "timestamp": "2024-01-17 22:04:21"
+    },
+    "bifid_playfair_vigenere_50000_500": {
+        "filename": "data/feathers/20240117_223248.feather",
+        "ciphers": [
+            "bifid",
+            "playfair",
+            "vigenere"
+        ],
+        "samples": 50000,
+        "sample_length": 500,
+        "hash": "88bbac1807ecad67a30f0e119476c6201194425937290c0cd7a4ac4fc60189f0",
+        "timestamp": "2024-01-17 22:32:48"
+    },
+    "bifid_playfair_vigenere_50000_1000": {
+        "filename": "data/feathers/20240117_230833.feather",
+        "ciphers": [
+            "bifid",
+            "playfair",
+            "vigenere"
+        ],
+        "samples": 50000,
+        "sample_length": 1000,
+        "hash": "af65b6b6aa4bb87fb56ab6b8af89be887d6ec4e339d6ad3316057fd00808f9af",
+        "timestamp": "2024-01-17 23:08:33"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_1000000_500": {
+        "filename": "data/feathers/20240118_064005.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 1000000,
+        "sample_length": 500,
+        "hash": "2f34927533c37a60058d0bea26d745d14f50cfc6972a4d9526604a7618c8524f",
+        "timestamp": "2024-01-18 06:40:07"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20000_500": {
+        "filename": "data/feathers/20240314_083038.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20000,
+        "sample_length": 500,
+        "hash": "481cf5ba8d1f5ff333b6c028fdfcd827eec7d221ad4ce37284b6b8ef65d9a845",
+        "timestamp": "2024-03-14 08:30:38"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20010_500": {
+        "filename": "data/feathers/20240314_084003.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20010,
+        "sample_length": 500,
+        "hash": "f0e61f02781389791365985920279c9db00a25c7f47082692e1e415cace958f8",
+        "timestamp": "2024-03-14 08:40:03"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20020_500": {
+        "filename": "data/feathers/20240314_085038.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20020,
+        "sample_length": 500,
+        "hash": "8e98c056c6d3177c27257369d00ba38ddb9617ade8952c096a4a999fdffb3a28",
+        "timestamp": "2024-03-14 08:50:38"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20030_500": {
+        "filename": "data/feathers/20240314_090155.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20030,
+        "sample_length": 500,
+        "hash": "eea5ae04856a820714b850aaea37b417d76ad36be38a55f59012ba9108839880",
+        "timestamp": "2024-03-14 09:01:55"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20040_500": {
+        "filename": "data/feathers/20240314_091328.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20040,
+        "sample_length": 500,
+        "hash": "a982020840da49518555acdf0e1d6d59ae6f0012246b9f7944c0fd754b884b4d",
+        "timestamp": "2024-03-14 09:13:28"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20050_500": {
+        "filename": "data/feathers/20240314_092513.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20050,
+        "sample_length": 500,
+        "hash": "cf3b7a6745bb945c4cb6ad1aafe8e0cf225d32b54d418095b0da9c43e039a087",
+        "timestamp": "2024-03-14 09:25:13"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20060_500": {
+        "filename": "data/feathers/20240314_093637.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20060,
+        "sample_length": 500,
+        "hash": "9cc141c28c9e5ccc6e92d24ea5d0c95839e19f516db82be2cf0441904f59b8d1",
+        "timestamp": "2024-03-14 09:36:37"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20070_500": {
+        "filename": "data/feathers/20240314_094757.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20070,
+        "sample_length": 500,
+        "hash": "8e8db7e3ef2b2078f0af65f196189934bfe14b8913ee1bd3fe8fd61abec99487",
+        "timestamp": "2024-03-14 09:47:57"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20080_500": {
+        "filename": "data/feathers/20240314_095909.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20080,
+        "sample_length": 500,
+        "hash": "3d9f3cafbfb97edaf3ddaa29936885b280e36c16affa0c9fa1115d29a4710616",
+        "timestamp": "2024-03-14 09:59:09"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20090_500": {
+        "filename": "data/feathers/20240314_101039.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20090,
+        "sample_length": 500,
+        "hash": "afb7e4e3dfb89ad8251314bbfdd6e09582f9deb589e72d469a8dd4d04711d2ba",
+        "timestamp": "2024-03-14 10:10:39"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_20100_500": {
+        "filename": "data/feathers/20240314_102150.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 20100,
+        "sample_length": 500,
+        "hash": "c8a923d6010868f68f85ddb0a1d0eb7071ed74ce886b19fdf4e13770041e9b87",
+        "timestamp": "2024-03-14 10:21:50"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40000_500": {
+        "filename": "data/feathers/20240315_062739.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40000,
+        "sample_length": 500,
+        "hash": "c1530721b49289b0df27b37b003679c45f936a218272676a5a7aec34472b8c4f",
+        "timestamp": "2024-03-15 06:27:39"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40010_500": {
+        "filename": "data/feathers/20240315_064550.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40010,
+        "sample_length": 500,
+        "hash": "28c28cc8e935151d362e921e70eb4c74aa5440e02c2e4154a055a5b2256c9f77",
+        "timestamp": "2024-03-15 06:45:50"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40020_500": {
+        "filename": "data/feathers/20240315_070559.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40020,
+        "sample_length": 500,
+        "hash": "79ac419a38471262b98ac6e3578f9e58514783a4e335c9dfbe18dcfde8dc1cdd",
+        "timestamp": "2024-03-15 07:06:00"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40030_500": {
+        "filename": "data/feathers/20240315_072704.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40030,
+        "sample_length": 500,
+        "hash": "ff9c474cdd47bc40c1a387a915ccf71b654fe43d6fa65910b15339cb479f3a27",
+        "timestamp": "2024-03-15 07:27:05"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40040_500": {
+        "filename": "data/feathers/20240315_074812.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40040,
+        "sample_length": 500,
+        "hash": "7f9070dc1707eb65f4d12f69a2d53ec477472e51d81121a8bb5db8aac7e17b4e",
+        "timestamp": "2024-03-15 07:48:13"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40050_500": {
+        "filename": "data/feathers/20240315_081016.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40050,
+        "sample_length": 500,
+        "hash": "e0964fbfc2fc4fd5f471a87510a9f9d7a09b49b16e809938528c1919c013a15f",
+        "timestamp": "2024-03-15 08:10:16"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40060_500": {
+        "filename": "data/feathers/20240315_083159.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40060,
+        "sample_length": 500,
+        "hash": "c07b28b222e87689710c8bf5c40d27dd394aca559ca9a7f32c19f93ecd175154",
+        "timestamp": "2024-03-15 08:31:59"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40070_500": {
+        "filename": "data/feathers/20240315_085408.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40070,
+        "sample_length": 500,
+        "hash": "1ffc0f3cb723739822395033e6826c6b09f425e60da2308f3465442c83a287eb",
+        "timestamp": "2024-03-15 08:54:08"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40080_500": {
+        "filename": "data/feathers/20240315_091633.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40080,
+        "sample_length": 500,
+        "hash": "29881ff76e1d412dcab23849e708f28c00a64327d94a9d18eb8886fbfe6a84fd",
+        "timestamp": "2024-03-15 09:16:33"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40090_500": {
+        "filename": "data/feathers/20240315_093827.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40090,
+        "sample_length": 500,
+        "hash": "aba6cc82d2488fa73ee3b3f61853b15c757dba3147060945e5249ca8714622d7",
+        "timestamp": "2024-03-15 09:38:27"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_40100_500": {
+        "filename": "data/feathers/20240315_100052.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 40100,
+        "sample_length": 500,
+        "hash": "e0f5ccd4528fe7d01a2f1cacdd58a4c13210252381bc0d18a1d7ad8e1cd98dca",
+        "timestamp": "2024-03-15 10:00:52"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_25000_500": {
+        "filename": "data/feathers/20240315_165646.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 25000,
+        "sample_length": 500,
+        "hash": "de6ae288031e467497bf7190b5c69c2f33fdf9dcd344aa7458465edf2991944a",
+        "timestamp": "2024-03-15 16:56:46"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_1000_500": {
+        "filename": "data/feathers/20250326_214945.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 1000,
+        "sample_length": 500,
+        "hash": "b0da3119095f9a489c4bda675716f5a9dda6d942a017badf1444e4852341b08c",
+        "timestamp": "2025-03-26 21:49:45"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_10000_250": {
+        "filename": "data/feathers/20250329_152333.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 10000,
+        "sample_length": 250,
+        "hash": "7bf1ec54503ad0a64e7590c6781f4b89d3462c0a562c1c37a16ae41a50f18f0e",
+        "timestamp": "2025-03-29 15:23:33"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_5000_150": {
+        "filename": "data/feathers/20250329_205130.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 5000,
+        "sample_length": 150,
+        "hash": "8d80f4cd6f4beb02f05f33482d1c9c3ad7895ad4cce6e5529a832f4a4bfdc0f8",
+        "timestamp": "2025-03-29 20:51:30"
+    },
+    "caesar_vigenere_5000_150": {
+        "filename": "data/feathers/20250330_102751.feather",
+        "ciphers": [
+            "caesar",
+            "vigenere"
+        ],
+        "samples": 5000,
+        "sample_length": 150,
+        "hash": "90ff868850226bb8eb6f195217a0aca5b4265c7aae6f0eab1885127924844701",
+        "timestamp": "2025-03-30 10:27:51"
+    },
+    "english_caesar_vigenere_beaufort_autokey_random_noise_playfair_bifid_fractionated_morse_columnar_transposition_10000_350": {
+        "filename": "data/feathers/20250330_131723.feather",
+        "ciphers": [
+            "english",
+            "caesar",
+            "vigenere",
+            "beaufort",
+            "autokey",
+            "random_noise",
+            "playfair",
+            "bifid",
+            "fractionated_morse",
+            "columnar_transposition"
+        ],
+        "samples": 10000,
+        "sample_length": 350,
+        "hash": "7e93a8480b78ef15bd6b4384980f52c24f49b4cbfc3e67fab7dc2406c53d26ea",
+        "timestamp": "2025-03-30 13:17:23"
+    }
+}

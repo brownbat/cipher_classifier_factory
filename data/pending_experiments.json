@@ -1,0 +1,205 @@
+[
+  {
+    "experiment_id": "20250330-30",
+    "timestamp": "2025-03-30 13:23:43",
+    "data_params": {
+      "ciphers": [
+        "english",
+        "caesar",
+        "vigenere",
+        "beaufort",
+        "autokey",
+        "random_noise",
+        "playfair",
+        "bifid",
+        "fractionated_morse",
+        "columnar_transposition"
+      ],
+      "sample_length": 350,
+      "num_samples": 10000
+    },
+    "hyperparams": {
+      "d_model": 256,
+      "nhead": 4,
+      "num_encoder_layers": 3,
+      "dim_feedforward": 256,
+      "batch_size": 32,
+      "dropout_rate": 0.1,
+      "base_patience": 5
+    }
+  },
+  {
+    "experiment_id": "20250330-31",
+    "timestamp": "2025-03-30 13:23:43",
+    "data_params": {
+      "ciphers": [
+        "english",
+        "caesar",
+        "vigenere",
+        "beaufort",
+        "autokey",
+        "random_noise",
+        "playfair",
+        "bifid",
+        "fractionated_morse",
+        "columnar_transposition"
+      ],
+      "sample_length": 350,
+      "num_samples": 10000
+    },
+    "hyperparams": {
+      "d_model": 256,
+      "nhead": 8,
+      "num_encoder_layers": 1,
+      "dim_feedforward": 128,
+      "batch_size": 32,
+      "dropout_rate": 0.1,
+      "base_patience": 5
+    }
+  },
+  {
+    "experiment_id": "20250330-32",
+    "timestamp": "2025-03-30 13:23:43",
+    "data_params": {
+      "ciphers": [
+        "english",
+        "caesar",
+        "vigenere",
+        "beaufort",
+        "autokey",
+        "random_noise",
+        "playfair",
+        "bifid",
+        "fractionated_morse",
+        "columnar_transposition"
+      ],
+      "sample_length": 350,
+      "num_samples": 10000
+    },
+    "hyperparams": {
+      "d_model": 256,
+      "nhead": 8,
+      "num_encoder_layers": 1,
+      "dim_feedforward": 256,
+      "batch_size": 32,
+      "dropout_rate": 0.1,
+      "base_patience": 5
+    }
+  },
+  {
+    "experiment_id": "20250330-33",
+    "timestamp": "2025-03-30 13:23:43",
+    "data_params": {
+      "ciphers": [
+        "english",
+        "caesar",
+        "vigenere",
+        "beaufort",
+        "autokey",
+        "random_noise",
+        "playfair",
+        "bifid",
+        "fractionated_morse",
+        "columnar_transposition"
+      ],
+      "sample_length": 350,
+      "num_samples": 10000
+    },
+    "hyperparams": {
+      "d_model": 256,
+      "nhead": 8,
+      "num_encoder_layers": 2,
+      "dim_feedforward": 128,
+      "batch_size": 32,
+      "dropout_rate": 0.1,
+      "base_patience": 5
+    }
+  },
+  {
+    "experiment_id": "20250330-34",
+    "timestamp": "2025-03-30 13:23:43",
+    "data_params": {
+      "ciphers": [
+        "english",
+        "caesar",
+        "vigenere",
+        "beaufort",
+        "autokey",
+        "random_noise",
+        "playfair",
+        "bifid",
+        "fractionated_morse",
+        "columnar_transposition"
+      ],
+      "sample_length": 350,
+      "num_samples": 10000
+    },
+    "hyperparams": {
+      "d_model": 256,
+      "nhead": 8,
+      "num_encoder_layers": 2,
+      "dim_feedforward": 256,
+      "batch_size": 32,
+      "dropout_rate": 0.1,
+      "base_patience": 5
+    }
+  },
+  {
+    "experiment_id": "20250330-35",
+    "timestamp": "2025-03-30 13:23:43",
+    "data_params": {
+      "ciphers": [
+        "english",
+        "caesar",
+        "vigenere",
+        "beaufort",
+        "autokey",
+        "random_noise",
+        "playfair",
+        "bifid",
+        "fractionated_morse",
+        "columnar_transposition"
+      ],
+      "sample_length": 350,
+      "num_samples": 10000
+    },
+    "hyperparams": {
+      "d_model": 256,
+      "nhead": 8,
+      "num_encoder_layers": 3,
+      "dim_feedforward": 128,
+      "batch_size": 32,
+      "dropout_rate": 0.1,
+      "base_patience": 5
+    }
+  },
+  {
+    "experiment_id": "20250330-36",
+    "timestamp": "2025-03-30 13:23:43",
+    "data_params": {
+      "ciphers": [
+        "english",
+        "caesar",
+        "vigenere",
+        "beaufort",
+        "autokey",
+        "random_noise",
+        "playfair",
+        "bifid",
+        "fractionated_morse",
+        "columnar_transposition"
+      ],
+      "sample_length": 350,
+      "num_samples": 10000
+    },
+    "hyperparams": {
+      "d_model": 256,
+      "nhead": 8,
+      "num_encoder_layers": 3,
+      "dim_feedforward": 256,
+      "batch_size": 32,
+      "dropout_rate": 0.1,
+      "base_patience": 5
+    }
+  }
+]

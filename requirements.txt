@@ -11,3 +11,4 @@ dash
 plotly
 bs4
 IPython
+torch-lr-finder
