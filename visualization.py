@@ -1,130 +1,56 @@
 import dash
-from dash import dcc
-from dash import html
-from dash.dependencies import Input, Output
+from dash import dcc, html, Input, Output, State, no_update
 import plotly.express as px
 import pandas as pd
 import os
-import glob
 import json
-import functools
+import numpy as np
+import argparse
+from collections import defaultdict
 
+# Define constants for file paths (assuming utils.py is not easily importable here)
+# Ideally, these would be imported from a shared constants module or utils.py
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+COMPLETED_EXPERIMENTS_FILE = os.path.join(PROJECT_ROOT, "data", "completed_experiments.json")
+ASSETS_FOLDER = os.path.join(PROJECT_ROOT, "assets")
+CSS_FILE = os.path.join(ASSETS_FOLDER, "custom_styles.css")
 
-# allow user to designate which metrics are sliders and which are x/y and which are simply ignored
-# display in a text box somewhere those other metrics
+# Define the order and names for key metrics used in visualization
+# Index 0: X-axis, Index 1: Y-axis
+METRIC_KEYS_ORDER = ['training_duration', 'best_val_accuracy', 'best_val_loss']
+METRIC_FALLBACK_KEYS_ORDER = ['training_duration', 'val_accuracy_curve', 'val_loss_curve'] # Used if 'best' metrics aren't available
+METRIC_LABELS = ['Training Duration (s)', 'Validation Accuracy', 'Validation Loss']
 
-# run some experiments repeatedly for percentage success?
-
-
-USE_MAIN_DATASET = False  # restrict to only the main completed_experiments.json file, rather than pulling in every historical .json
-
+# --- Utility Functions ---
 
 def safe_json_load(file_path):
+    """Loads JSON data from a file, handling errors gracefully."""
     try:
         with open(file_path, 'r') as file:
-            return json.load(file)
+            data = json.load(file)
+            # Ensure it returns a list, even if the file contains a single object (though it shouldn't)
+            return data if isinstance(data, list) else []
     except json.JSONDecodeError:
-        # Handle empty or invalid JSON file
-        print(f"WARNING: {file_path} is empty or invalid. An empty list will be used.")
+        print(f"WARNING: '{os.path.basename(file_path)}' is empty or invalid. Returning empty list.")
         return []
     except FileNotFoundError:
-        # Handle file not found and create a new empty file
-        print(f"WARNING: {file_path} not found. Creating a new file.")
-        with open(file_path, 'w') as file:
-            json.dump([], file)
+        print(f"WARNING: '{os.path.basename(file_path)}' not found. Returning empty list.")
+        # Optionally create an empty file:
+        # os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        # with open(file_path, 'w') as file:
+        #     json.dump([], file)
         return []
 
-
-def filter_experiments(experiments, filter_criteria):
-    """
-    Filter out experiments that do not meet the filter criteria.
-
-    Args:
-    - experiments (list): List of experiment dictionaries.
-    - filter_criteria (dict): Dictionary of parameters to accept.
-
-    Returns:
-    - (list): Filtered list of experiments.
-    """
-    filtered_experiments = []
-    for exp in experiments:
-        include_exp = True
-        
-        # Check that experiment has required data
-        if 'hyperparams' not in exp or 'data_params' not in exp or 'metrics' not in exp:
-            include_exp = False
-            continue
-            
-        # Check that experiment has complete metrics
-        if not exp['metrics'].get('val_accuracy') or not exp['metrics'].get('training_duration'):
-            include_exp = False
-            continue
-            
-        # Check filter criteria
-        for param, legal_values in filter_criteria.items():
-            if param in exp['hyperparams'] and exp['hyperparams'][param] not in legal_values:
-                include_exp = False
-                break
-            if param in exp['data_params'] and exp['data_params'][param] not in legal_values:
-                include_exp = False
-                break
-        
-        if include_exp:
-            filtered_experiments.append(exp)
-            
-    print(f"Found {len(filtered_experiments)} valid experiments out of {len(experiments)} total")
-    return filtered_experiments
-
-
-def calculate_avg_accuracy_per_value(data, param_name):
-    # Group data by the value of the hyperparameter and collect accuracies
-    value_accuracy_dict = {}
-    for experiment in data:
-        # Check both 'data_params' and 'hyperparams' for the parameter
-        if param_name in experiment['data_params']:
-            value = experiment['data_params'][param_name]
-        elif param_name in experiment['hyperparams']:
-            value = experiment['hyperparams'][param_name]
-        else:
-            # Handle cases where the parameter is missing
-            continue  # or raise an error, or handle as needed
-        # Obtain the last known accuracy value, ensuring it is not None
-        accuracy = experiment['metrics']['val_accuracy'][-1] if experiment['metrics']['val_accuracy'] else None
-        if accuracy is not None and accuracy > 0:  # Only consider non-null accuracies
-            if value not in value_accuracy_dict:
-                value_accuracy_dict[value] = []
-            value_accuracy_dict[value].append(accuracy)
-
-    # Calculate average accuracy for each value, excluding any null results
-    avg_accuracy_per_value = {
-        value: sum(accuracies) / len(accuracies) 
-        for value, accuracies in value_accuracy_dict.items() if accuracies  # Ensure there are accuracies to average
-    }
-    return avg_accuracy_per_value
-
-
-
 def generate_colors(num_colors, saturation=40, lightness=40):
-    """Generate 'num_colors' distinct pastel colors in HSL format and return them as a list."""
+    """Generate 'num_colors' distinct HSL colors."""
     colors = []
     for i in range(num_colors):
-        hue = int((360 / num_colors) * i)  # Evenly space the hue
+        hue = int((360 / num_colors) * i)
         colors.append(f"hsl({hue}, {saturation}%, {lightness}%)")
     return colors
 
-
-def generate_slider_marks(data, param_name):
-    avg_accuracy_per_value = calculate_avg_accuracy_per_value(data, param_name)
-    marks = {}
-    for value, accuracy in avg_accuracy_per_value.items():
-        # Format the accuracy as a string with 3 decimal places
-        accuracy_str = f"{accuracy:.3f}"
-        # Set the label with the value and average accuracy (avg acc)
-        marks[value] = f"{value} ({accuracy_str})"
-    return marks
-
-
 def generate_slider_css(num_sliders, colors):
+    """Generate CSS rules for styling sliders with different colors."""
     css_rules = ""
     for i in range(num_sliders):
         color = colors[i % len(colors)]
@@ -134,701 +60,622 @@ def generate_slider_css(num_sliders, colors):
         """
     return css_rules
 
-
-def generate_offsets(variable_params, offset_coefficient=0.1):
-    """Generate a list of (x, y) offset tuples for each parameter."""
-    # Assuming 'output1' and 'output2' are the metrics for x and y axes, respectively
-    output1_range = max(variable_params['output1']) - min(variable_params['output1'])
-    output2_range = max(variable_params['output2']) - min(variable_params['output2'])
-
-    base_offset_x = offset_coefficient * output1_range
-    base_offset_y = offset_coefficient * output2_range
-
-    offsets = []
-    for i in range(len(variable_params)):
-        offset_x = (base_offset_x * i) - ((len(variable_params) // 2) * base_offset_x)
-        offset_y = (base_offset_y * i) - ((len(variable_params) // 2) * base_offset_y)
-        offsets.append((offset_x, offset_y))
-    return offsets
-
-
-def write_css_to_file(css_content, filename='assets/custom_styles.css'):
+def write_css_to_file(css_content, filename=CSS_FILE):
+    """Writes CSS content to the specified file."""
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     with open(filename, 'w') as file:
         file.write(css_content)
 
+# --- Data Loading and Filtering ---
 
-def setup_dash_app(data=None):
-    if data is None or not data:
-        print("Warning: No experiment data available to visualize")
-        # Create a simple app with a message
-        app = dash.Dash(__name__)
-        app.layout = html.Div([
-            html.H3("No experiment data available to visualize", style={'text-align': 'center'}),
-            html.P("Complete some experiments first, then run visualization.py again.")
-        ])
-        return app
-    
-    # Display experiment count
-    experiment_count = len(data)
-    print(f"Visualizing {experiment_count} experiments")
+def load_data(max_experiments=None):
+    """Loads experiment data from the main JSON file."""
+    data = safe_json_load(COMPLETED_EXPERIMENTS_FILE)
+    print(f"Loaded {len(data)} total experiments from '{os.path.basename(COMPLETED_EXPERIMENTS_FILE)}'")
 
-    transformed_data = transform_data(data)
-    if not transformed_data:
-        print("Warning: No valid experiment data after transformation")
-        app = dash.Dash(__name__)
-        app.layout = html.Div([
-            html.H3("No valid experiment data to visualize", style={'text-align': 'center'}),
-            html.P("Ensure your experiments have completed successfully.")
-        ])
-        return app
-
-    # Create a dictionary mapping parameter tuples to (metrics, experiment_info)
-    transformed_data_dict = {params: (metrics, exp_info) for params, metrics, exp_info in transformed_data}
-    
-    param_value_map = build_param_value_map(transformed_data)
-    num_metrics = len(transformed_data[0][1]) if transformed_data else 0
-    column_names = [f'output{i + 1}' for i in range(num_metrics)]
-    
-    # Create DataFrame for graph scaling
-    df = pd.DataFrame([metrics for _, metrics, _ in transformed_data], columns=column_names)
-
-    # Identify unchanging parameters
-    constant_params = {k: v for k, v in param_value_map.items() if len(v) == 1}
-
-    # Identifying variable parameters
-    variable_params = {k: v for k, v in param_value_map.items() if len(v) > 1}
-    num_params = len(variable_params)
-
-    # Find most accurate parameters
-    best_params_tuple = None
-    best_metric = -float("inf")  
-    best_exp_info = {}
-
-    if transformed_data:
-        for params_tuple, metrics_tuple, exp_info in transformed_data:
-            if len(metrics_tuple) > 1:  # Ensure we have at least accuracy metric
-                value_to_track = metrics_tuple[1]  
-                if value_to_track > best_metric:
-                    best_params_tuple = params_tuple
-                    best_metric = value_to_track
-                    best_exp_info = exp_info
-
-    best_params_dict = {}
-    if best_params_tuple:
-        for i, param_name in enumerate(param_value_map.keys()):
-            if i < len(best_params_tuple):
-                best_params_dict[param_name] = best_params_tuple[i]
-
-    # Reduce to the settings that are variable
-    best_variables = {}
-    for param_name, value in best_params_dict.items():
-      if param_name in variable_params:
-        best_variables[param_name] = value
-
-    # Construct legend content
-    constant_params_info = f"Fixed Parameters: {', '.join([f'{k}: {list(v)[0]}' for k, v in constant_params.items()])}"
-    best_exp_id = best_exp_info.get('experiment_id', 'unknown')
-    best_exp_uid = best_exp_info.get('uid', 'unknown')
-    
-    highest_accuracy_info = (f"Highest Accuracy: {best_exp_id} - "
-                            f"Parameters: {best_variables} with Accuracy of {best_metric:.4f}")
-
-    colors = generate_colors(num_params)
-    slider_css = generate_slider_css(num_params, colors)
-    write_css_to_file(slider_css)
-
-    # Extracting metric values for graph scaling
-    metrics = [values for _, values, _ in transformed_data]
-    accuracy_values = [m[1] for m in metrics]  # Assuming accuracy is the second metric
-    training_duration_values = [m[0] for m in metrics]  # Assuming training duration is the first metric
-
-    min_accuracy, max_accuracy = min(accuracy_values), max(accuracy_values)
-    min_duration, max_duration = min(training_duration_values), max(training_duration_values)
-
-    # Adding a buffer for better visualization
-    accuracy_buffer = (max_accuracy - min_accuracy) * 0.1
-    duration_buffer = (max_duration - min_duration) * 0.1
-
-    graph_layout = {
-        'xaxis': {'range': [min_duration - duration_buffer, max_duration + duration_buffer]},
-        'yaxis': {'range': [min_accuracy - accuracy_buffer, max_accuracy + accuracy_buffer]},
-        # Include other layout properties as needed
-    }
-
-    app = dash.Dash(__name__)
-    html_output = [
-        html.H3(f"Transformer Experiments Dashboard - Showing {experiment_count} Experiments", 
-                style={'text-align': 'center', 'margin-bottom': '20px'})
-    ]
-    
-    # Title for the app
-    ciphers_list = data[0]['data_params']['ciphers']
-    title = "Distinguishing between " + ', '.join(ciphers_list)
-    html_output.append(html.Div([
-        html.H4(
-            "Distinguishing between " + ', '.join(ciphers_list))],
-            style={'text-align': 'center'}))
-
-    # Adding the graph (first a line br)
-    html_output.append(html.Br())
-    html_output.append(dcc.Graph(id='output-graph', figure={'layout': graph_layout}))
-    html_output.append(html.Br())
-
-    # Add legend to HTML output
-    html_output.append(html.Div([
-        html.P(constant_params_info),
-        html.P(highest_accuracy_info)
-    ], style={'padding': '10px'}))
-
-    for idx, (param_name, values) in enumerate(variable_params.items()):
-        min_val, max_val = min(values), max(values)
-        # marks = {val if isinstance(val, int) else float(val): str(val) for val in values}
-        marks = generate_slider_marks(data, param_name)
-
-        html_output.append(html.Div([
-            html.Label(f'{param_name.capitalize()}'),
-            dcc.Slider(
-                id=f'slider-{param_name}',
-                min=min_val,
-                max=max_val,
-                value=min_val,
-                marks=marks,
-                step=None,
-                className=f'slider-color-{idx+1}'
-            ),
-        ], style={'padding': '20px 0px'}))
-
-    # Add a hidden div to store clicked data state
-    html_output.append(html.Div(id='clicked-data-store', style={'display': 'none'}))
-    
-    app.layout = html.Div(html_output)
-
-    # Callback for handling click events on ghost points
-    @app.callback(
-        [Output(f'slider-{param_name}', 'value') for param_name in variable_params.keys()],
-        [Input('output-graph', 'clickData')],
-        prevent_initial_call=True
-    )
-    def handle_click_data(clickData):
-        if not clickData or 'points' not in clickData or not clickData['points']:
-            # No click data or no points in click data
-            return [dash.no_update] * len(variable_params)
-            
-        point = clickData['points'][0]
-        
-        # Only process if point has customdata (ghost point)
-        if 'customdata' not in point or not point['customdata']:
-            return [dash.no_update] * len(variable_params)
-            
-        # Get customdata string (format: "param_name:param_value")
-        custom_data = point['customdata'][0] if isinstance(point['customdata'], list) else point['customdata']
-        
-        # Check if this is a valid customdata string
-        if not isinstance(custom_data, str) or ':' not in custom_data:
-            return [dash.no_update] * len(variable_params)
-            
-        # Parse parameter name and value from custom data
-        try:
-            clicked_param_name, value_str = custom_data.split(':', 1)
-            # Convert value to the appropriate type
-            if '.' in value_str:
-                clicked_param_value = float(value_str)
-            else:
-                clicked_param_value = int(value_str)
-        except (ValueError, TypeError):
-            return [dash.no_update] * len(variable_params)
-        
-        # Create the list of new slider values
-        new_values = []
-        for param_name in variable_params.keys():
-            if param_name == clicked_param_name:
-                # Update the clicked parameter's slider value
-                new_values.append(clicked_param_value)
-            else:
-                # Keep other sliders unchanged
-                new_values.append(dash.no_update)
-                
-        return new_values
-
-    @app.callback(
-        Output('output-graph', 'figure'),
-        [Input(f'slider-{param_name}', 'value') for param_name in variable_params.keys()]
-    )
-    def update_graph(*slider_values):
-        # Extract the first experiment's parameters as a template for constant values
-        constant_values_template = transformed_data[0][0]
-
-        # Map of variable parameter names to their slider values
-        variable_values = dict(zip(variable_params.keys(), slider_values))
-
-        # Reconstruct the complete key
-        current_key = tuple(variable_values.get(param_name, constant_values_template[idx]) 
-                            for idx, param_name in enumerate(param_value_map.keys()))
-        
-        if current_key not in transformed_data_dict:
-            # Handle case where the parameter set hasn't been tested
-            fig = px.scatter(x=[0], y=[0], labels={'x':'Training Time', 'y':'Accuracy'})
-            fig.add_annotation(text="Untested parameter set",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5, showarrow=False,
-                font=dict(size=16, color="blue"))
-        else:
-            # Handle case where we have data for this parameter set
-            (current_metrics, current_exp_info_dict) = transformed_data_dict[current_key]
-            current_output1, current_output2 = current_metrics[0], current_metrics[1]
-            
-            # Extract experiment details for title
-            exp_id = current_exp_info_dict.get('experiment_id', 'unknown')
-            exp_uid = current_exp_info_dict.get('uid', 'unknown')
-            
-            # Create a detailed title with experiment info
-            # Show just the experiment_id which should now be the date-based ID
-            fig_title = f"Experiment: {exp_id} - Training: {current_output1:.2f}s, Accuracy: {current_output2:.4f}"
-            
-            fig = px.scatter(x=[current_output1], y=[current_output2], 
-                             labels={'x':'Training Time', 'y':'Accuracy'},
-                             title=fig_title)
-            fig.update_traces(marker=dict(size=15, color='black'))
-
-            # Graph scaling based on DataFrame
-            min_x, max_x = df['output1'].min(), df['output1'].max()
-            min_y, max_y = df['output2'].min(), df['output2'].max()
-            margin_x = 0.1 * (max_x - min_x)
-            margin_y = 0.1 * (max_y - min_y)
-            fig.update_layout(
-                xaxis_range=[min_x - margin_x, max_x + margin_x],
-                yaxis_range=[min_y - margin_y, max_y + margin_y])
-
-            # Adding ghost points
-
-            # Iterate over variable parameters to identify both higher and lower parameter values
-            for idx, (param_name, values) in enumerate(variable_params.items()):
-                sorted_values = sorted(values)
-                
-                correct_idx = list(param_value_map.keys()).index(param_name)
-                current_value = current_key[correct_idx]
-                
-                # Find next higher value (if any)
-                next_values = [v for v in sorted_values if v > current_value]
-                if next_values:
-                    next_value = next_values[0]
-
-                    # Construct the next_key by replacing the current parameter value with next_value
-                    next_key = list(current_key)
-                    next_key[correct_idx] = next_value
-                    next_key = tuple(next_key)
-
-                    # Check if the next_key exists in transformed_data_dict
-                    if next_key in transformed_data_dict:
-                        (next_metrics, next_exp_info) = transformed_data_dict[next_key]
-                        ghost_output1, ghost_output2 = next_metrics[0], next_metrics[1]
-                        
-                        # Get experiment ID for ghost point
-                        ghost_exp_id = next_exp_info.get('experiment_id', 'unknown')
-                        
-                        # Add ghost point to the plot with hover info displaying original values
-                        label = f'{ghost_exp_id}: {param_name}={next_value}'
-                        hover_text = (f"Experiment: {ghost_exp_id}<br>" + 
-                                    f"Training Time: {ghost_output1:.2f}s<br>" +
-                                    f"Accuracy: {ghost_output2:.4f}<br>" +
-                                    f"Change: {param_name} ↑ {current_value} → {next_value}")
-                        
-                        # Store parameter information in customdata for click handling
-                        custom_data = [f"{param_name}:{next_value}"]
-                        
-                        fig.add_scatter(
-                            x=[ghost_output1],
-                            y=[ghost_output2],
-                            mode='markers',
-                            marker=dict(
-                                size=9,
-                                color=colors[idx % len(colors)],
-                                opacity=0.4),  # Higher opacity for higher values
-                            name=label,
-                            hovertext=hover_text,
-                            hoverinfo='text',
-                            customdata=custom_data)
-                        # Add lines to ghost points for visibility
-                        fig.add_shape(type='line',
-                                      x0=current_output1, y0=current_output2,
-                                      x1=ghost_output1, y1=ghost_output2,
-                                      line=dict(color=colors[idx % len(colors)], width=2, dash='dot'))
-                
-                # Find previous lower value (if any)
-                prev_values = [v for v in sorted_values if v < current_value]
-                if prev_values:
-                    prev_value = prev_values[-1]  # Get the closest lower value
-                    
-                    # Construct the prev_key by replacing the current parameter value with prev_value
-                    prev_key = list(current_key)
-                    prev_key[correct_idx] = prev_value
-                    prev_key = tuple(prev_key)
-                    
-                    # Check if the prev_key exists in transformed_data_dict
-                    if prev_key in transformed_data_dict:
-                        (prev_metrics, prev_exp_info) = transformed_data_dict[prev_key]
-                        ghost_output1, ghost_output2 = prev_metrics[0], prev_metrics[1]
-                        
-                        # Get experiment ID for ghost point
-                        ghost_exp_id = prev_exp_info.get('experiment_id', 'unknown')
-                        
-                        # Add ghost point to the plot with hover info displaying original values
-                        label = f'{ghost_exp_id}: {param_name}={prev_value}'
-                        hover_text = (f"Experiment: {ghost_exp_id}<br>" + 
-                                    f"Training Time: {ghost_output1:.2f}s<br>" +
-                                    f"Accuracy: {ghost_output2:.4f}<br>" +
-                                    f"Change: {param_name} ↓ {current_value} → {prev_value}")
-                        
-                        # Store parameter information in customdata for click handling
-                        # We'll use a string format that can be parsed reliably, inside an array
-                        custom_data = [f"{param_name}:{prev_value}"]
-                        
-                        fig.add_scatter(
-                            x=[ghost_output1],
-                            y=[ghost_output2],
-                            mode='markers',
-                            marker=dict(
-                                size=9,
-                                color=colors[idx % len(colors)],
-                                opacity=0.2),  # Lower opacity for lower values
-                            name=label,
-                            hovertext=hover_text,
-                            hoverinfo='text',
-                            customdata=custom_data)
-                        # Add lines to ghost points for visibility
-                        fig.add_shape(type='line',
-                                      x0=current_output1, y0=current_output2,
-                                      x1=ghost_output1, y1=ghost_output2,
-                                      line=dict(color=colors[idx % len(colors)], width=2, dash='dot'))
-        return fig
-    return app
-
-
-# Cache for transformed data
-_transform_cache = {}
-
-def transform_data(data, use_cache=True):
-    """
-    Transform the experiment data into a format suitable for visualization.
-    Dynamically extracts parameters and metrics from the experiment data.
-    
-    Args:
-        data: List of experiment dictionaries
-        use_cache: Whether to use cached results if available
-        
-    Returns:
-        List of (parameters, metrics, experiment_info) tuples where experiment_info is a dict
-    """
-    # Use a simple cache key based on the number of items and first/last item hash
-    if data:
-        cache_key = (len(data), id(data[0]), id(data[-1]))
-        if use_cache and cache_key in _transform_cache:
-            return _transform_cache[cache_key]
-    
-    transformed_tuples = []
-    for experiment in data:
-        params = []
-        
-        # Dynamically extracting parameters from 'data_params'
-        if 'data_params' in experiment:
-            for key, value in sorted(experiment['data_params'].items()):
-                if isinstance(value, list):
-                    # For lists (like ciphers), store their length
-                    params.append(len(value))
-                else:
-                    # For other types, store the value directly
-                    params.append(value)
-        
-        # Extract hyperparameters
-        if 'hyperparams' in experiment:
-            # Common hyperparameters
-            for key in ['batch_size', 'dropout_rate', 'epochs', 'learning_rate']:
-                if key in experiment['hyperparams']:
-                    params.append(experiment['hyperparams'][key])
-                else:
-                    params.append(None)  # Add placeholder for missing values
-            
-            # Transformer hyperparameters
-            for key in ['d_model', 'nhead', 'num_encoder_layers', 'dim_feedforward']:
-                if key in experiment['hyperparams']:
-                    params.append(experiment['hyperparams'][key])
-                else:
-                    params.append(None)
-        
-        # Extracting metrics
-        metrics = []
-        if 'metrics' in experiment:
-            for key in ['training_duration', 'val_accuracy', 'val_loss']:
-                if key in experiment['metrics']:
-                    value = experiment['metrics'][key]
-                    # For 'val_accuracy' and 'val_loss', use the last value
-                    if key in ['val_accuracy', 'val_loss'] and isinstance(value, list):
-                        metrics.append(value[-1])
-                    else:
-                        metrics.append(value)
-        
-        # Extract experiment info for display
-        experiment_info = {
-            'experiment_id': experiment.get('experiment_id', 'unknown'),
-            'uid': experiment.get('uid', 'unknown')
-        }
-
-        experiment_tuple = (tuple(params), tuple(metrics), experiment_info)
-        transformed_tuples.append(experiment_tuple)
-    
-    # Cache the result
-    if data:
-        _transform_cache[cache_key] = transformed_tuples
-    
-    return transformed_tuples
-
-
-def load_and_concatenate_json_files(pattern):
-    all_data = []
-    for file_name in glob.glob(pattern):
-        data = safe_json_load(file_name)
-        all_data.extend(data)
-    return all_data
-
-
-def load_data(max_experiments=None, use_strict_filters=False):
-    """
-    Load experiment data from JSON files and optionally limit to a maximum number of experiments.
-    
-    Args:
-        max_experiments: Optional maximum number of experiments to include
-        use_strict_filters: If True, use strict parameter filters; if False, use looser filters
-        
-    Returns:
-        List of filtered experiment dictionaries
-    """
-    if USE_MAIN_DATASET:
-        data = safe_json_load('data/completed_experiments.json')
-    else:  # use all completed jsons in the data folder
-        json_files_pattern = "data/completed_experiments*.json"
-        data = load_and_concatenate_json_files(json_files_pattern)
-
-    print(f"Loaded {len(data)} total experiments from JSON files")
-    
-    if use_strict_filters:
-        # Define strict filter parameters for transformer models (exact match)
-        params = {
-            'ciphers': [[
-                "english",
-                "caesar",
-                "vigenere",
-                "beaufort",
-                "autokey",
-                "random_noise",
-                "playfair",
-                "bifid",
-                "fractionated_morse",
-                "columnar_transposition"]],
-            'num_samples': [100000],
-            'sample_length': [500],
-            'epochs': [30],
-            'd_model': [128, 256],
-            'nhead': [4, 8],
-            'num_encoder_layers': [2, 4],
-            'dim_feedforward': [512, 1024],
-            'batch_size': [32, 64],
-            'dropout_rate': [0.1, 0.2],
-            'learning_rate': [1e-4, 3e-4]
-        }
-    else:
-        # Define loose filter parameters - just check that metrics exist
-        params = {}
-    
-    data = filter_experiments(data, params)
-    
     # Limit to max_experiments if specified
     if max_experiments is not None and max_experiments > 0:
         data = data[:max_experiments]
-        
+        print(f"Limited to {len(data)} experiments based on --max_experiments")
+
     return data
 
-
-def build_param_value_map(transformed_data):
-    """
-    Build a map of parameter names to their possible values based on transformed data.
-    
-    Args:
-        transformed_data: List of (parameters, metrics, exp_info) tuples
-        
-    Returns:
-        Dict mapping parameter names to sets of possible values
-    """
-    # Define parameter names for transformer models
-    param_names = [
-        # Data parameters
-        'num_ciphers', 'num_samples', 'sample_length',
-        # Common hyperparameters
-        'batch_size', 'dropout_rate', 'epochs', 'learning_rate',
-        # Transformer hyperparameters
-        'd_model', 'nhead', 'num_encoder_layers', 'dim_feedforward'
-    ]
-    
-    # Create a map with empty sets
-    param_value_map = {param_name: set() for param_name in param_names}
-    
-    # Fill the map with values from the transformed data
-    for experiment in transformed_data:
-        params = experiment[0]
-        for idx, param_value in enumerate(params):
-            if idx < len(param_names):
-                param_name = param_names[idx]
-                if param_value is not None:  # Only add non-None values
-                    param_value_map[param_name].add(param_value)
-    
-    return param_value_map
-
-
-# Parse command line arguments
-import argparse
-
 def parse_filter_string(filter_str):
-    """
-    Parse a filter string into a structured filter dictionary.
-    Format: "param1=val1,val2;param2=val3,val4"
-    
-    Example: "epochs=20,40;d_model=128;dropout_rate=0.1"
-    Returns: {
-        'hyperparams': {
-            'epochs': [20, 40],
-            'd_model': [128],
-            'dropout_rate': [0.1]
-        }
-    }
-    """
-    filter_params = {'hyperparams': {}}
-    
-    # Split by semicolons to get parameter groups
+    """Parses a filter string (e.g., "epochs=40;d_model=128,256") into a dict."""
+    filter_params = {'hyperparams': {}, 'data_params': {}}
     param_groups = filter_str.split(';')
-    
     for group in param_groups:
-        if not group.strip():
-            continue
-            
-        # Split by equals sign to get parameter name and values
         if '=' in group:
-            param, values = group.split('=', 1)
+            param, values_str = group.split('=', 1)
             param = param.strip()
-            
-            # Split values by comma
-            value_strings = [v.strip() for v in values.split(',')]
-            parsed_values = []
-            
-            for val in value_strings:
-                if not val:
-                    continue
-                    
+            values = []
+            for v_str in values_str.split(','):
+                v_str = v_str.strip()
+                if not v_str: continue
                 try:
-                    # Try to convert to appropriate type
-                    if '.' in val:
-                        parsed_values.append(float(val))
-                    else:
-                        parsed_values.append(int(val))
+                    values.append(float(v_str) if '.' in v_str or 'e' in v_str else int(v_str))
                 except ValueError:
-                    parsed_values.append(val)
-            
-            filter_params['hyperparams'][param] = parsed_values
-    
+                    values.append(v_str) # Keep as string if conversion fails
+
+            # Determine if it's likely a hyperparam or data_param (heuristic)
+            if param in ['num_samples', 'sample_length', 'ciphers']: # Add known data params
+                filter_params['data_params'][param] = values
+            else: # Assume hyperparameter otherwise
+                filter_params['hyperparams'][param] = values
     return filter_params
 
-
 def load_filter_config(filter_arg):
-    """
-    Load filter configuration from a string or file.
-    
-    Args:
-        filter_arg: Either a filter string or path to a JSON file
-        
-    Returns:
-        Dictionary containing filter parameters
-    """
-    # Check if the argument is a file path
+    """Loads filter configuration from a string or JSON file path."""
     if os.path.exists(filter_arg) and filter_arg.endswith('.json'):
         try:
             with open(filter_arg, 'r') as f:
                 return json.load(f)
-        except json.JSONDecodeError:
-            print(f"ERROR: Filter file '{filter_arg}' is not valid JSON")
-            return {}
         except Exception as e:
-            print(f"ERROR: Could not load filter file: {e}")
+            print(f"ERROR: Could not load or parse filter file '{filter_arg}': {e}")
             return {}
     else:
-        # Treat as a filter string
         try:
             return parse_filter_string(filter_arg)
         except Exception as e:
-            print(f"ERROR: Could not parse filter string: {e}")
+            print(f"ERROR: Could not parse filter string '{filter_arg}': {e}")
             return {}
 
+def apply_filters(experiments, filter_config):
+    """Filters experiments based on the provided filter configuration."""
+    if not filter_config or not experiments:
+        return experiments
 
-def apply_filters(experiments, filter_params):
-    """
-    Filter experiments based on parameter criteria.
-    
-    Args:
-        experiments: List of experiment dictionaries
-        filter_params: Dictionary with 'hyperparams' and/or 'data_params' keys
-                      containing filter criteria
-    
-    Returns:
-        Filtered list of experiments
-    """
-    filtered = []
-    
+    filtered_experiments = []
     for exp in experiments:
         include = True
-        
-        # Filter by hyperparameters
-        if 'hyperparams' in filter_params:
-            for param, values in filter_params['hyperparams'].items():
-                if param in exp.get('hyperparams', {}):
-                    if exp['hyperparams'][param] not in values:
-                        include = False
-                        break
-        
-        # Filter by data parameters
-        if include and 'data_params' in filter_params:
-            for param, values in filter_params['data_params'].items():
-                if param in exp.get('data_params', {}):
-                    if exp['data_params'][param] not in values:
-                        include = False
-                        break
-        
-        if include:
-            filtered.append(exp)
-    
-    return filtered
+        # Check data_params
+        for param, allowed_values in filter_config.get('data_params', {}).items():
+            if param not in exp.get('data_params', {}) or exp['data_params'][param] not in allowed_values:
+                include = False
+                break
+        if not include: continue
 
+        # Check hyperparams
+        for param, allowed_values in filter_config.get('hyperparams', {}).items():
+            if param not in exp.get('hyperparams', {}) or exp['hyperparams'][param] not in allowed_values:
+                include = False
+                break
+        if not include: continue
+
+        # Check for essential metrics (ensure experiment likely completed)
+        metrics = exp.get('metrics', {})
+        if not metrics or METRIC_KEYS_ORDER[0] not in metrics or (METRIC_KEYS_ORDER[1] not in metrics and METRIC_FALLBACK_KEYS_ORDER[1] not in metrics):
+             include = False
+
+        if include:
+            filtered_experiments.append(exp)
+
+    print(f"Filtered down to {len(filtered_experiments)} experiments")
+    return filtered_experiments
+
+# --- Parameter and Data Transformation ---
+
+def discover_parameters_and_order(experiments):
+    """
+    Discovers all unique parameter keys from data_params and hyperparams
+    across all experiments and returns them in a sorted list (canonical order).
+    Excludes identifier 'experiment_id'.
+    """
+    param_keys = set()
+    excluded_keys = {'experiment_id'} # Keys not treated as tunable parameters
+
+    for exp in experiments:
+        param_keys.update(k for k in exp.get('data_params', {}).keys() if k not in excluded_keys)
+        param_keys.update(k for k in exp.get('hyperparams', {}).keys() if k not in excluded_keys)
+
+    return sorted(list(param_keys))
+
+def transform_data(experiments, canonical_param_order):
+    """
+    Transforms raw experiment data into tuples for visualization, using the
+    canonical parameter order.
+
+    Returns:
+        List of (parameters_tuple, metrics_tuple, experiment_info_dict)
+    """
+    transformed_tuples = []
+    missing_metrics_count = 0
+
+    for exp in experiments:
+        params_list = []
+        for param_name in canonical_param_order:
+            value = exp.get('data_params', {}).get(param_name, exp.get('hyperparams', {}).get(param_name))
+            if isinstance(value, list):
+                 value = tuple(value) # Convert lists to hashable tuples
+            params_list.append(value)
+        parameters_tuple = tuple(params_list)
+
+        # Extract metrics, prioritizing 'best' values
+        metrics = exp.get('metrics', {})
+        duration = metrics.get(METRIC_KEYS_ORDER[0])
+        accuracy = metrics.get(METRIC_KEYS_ORDER[1])
+        loss = metrics.get(METRIC_KEYS_ORDER[2])
+
+        # Fallback for accuracy/loss using curves
+        if accuracy is None and METRIC_FALLBACK_KEYS_ORDER[1] in metrics:
+            curve = metrics[METRIC_FALLBACK_KEYS_ORDER[1]]
+            if isinstance(curve, list) and curve: accuracy = curve[-1]
+        if loss is None and METRIC_FALLBACK_KEYS_ORDER[2] in metrics:
+            curve = metrics[METRIC_FALLBACK_KEYS_ORDER[2]]
+            if isinstance(curve, list) and curve: loss = curve[-1]
+
+        # Only include if primary metrics (duration and accuracy) are available
+        if duration is not None and accuracy is not None:
+            metrics_tuple = (duration, accuracy, loss if loss is not None else float('nan'))
+            experiment_info = {'experiment_id': exp.get('experiment_id', 'unknown')}
+            transformed_tuples.append((parameters_tuple, metrics_tuple, experiment_info))
+        else:
+            missing_metrics_count += 1
+
+    if missing_metrics_count > 0:
+         print(f"WARNING: Skipped {missing_metrics_count} experiments due to missing essential metrics (duration or accuracy).")
+
+    return transformed_tuples
+
+
+def build_param_value_map(transformed_data, canonical_param_order):
+    """
+    Builds a map of parameter names to the set of unique values observed
+    for that parameter across all transformed experiments. Values are sorted.
+    """
+    param_value_map = {name: set() for name in canonical_param_order}
+    for params_tuple, _, _ in transformed_data:
+        for idx, value in enumerate(params_tuple):
+            param_name = canonical_param_order[idx]
+            if value is not None and not (isinstance(value, float) and np.isnan(value)):
+                param_value_map[param_name].add(value)
+
+    # Convert sets to sorted lists
+    for name, values in param_value_map.items():
+        try:
+            param_value_map[name] = sorted(list(values))
+        except TypeError:
+             param_value_map[name] = sorted(list(values), key=str) # Fallback sort for mixed types
+
+    return param_value_map
+
+# --- Slider Mark Generation ---
+
+def calculate_avg_accuracy_per_value(experiments, param_name):
+    """Calculates average validation accuracy for each value of a given parameter."""
+    value_accuracy_dict = defaultdict(list)
+    for exp in experiments:
+        value = exp.get('data_params', {}).get(param_name, exp.get('hyperparams', {}).get(param_name))
+        if value is not None:
+            metrics = exp.get('metrics', {})
+            accuracy = metrics.get(METRIC_KEYS_ORDER[1]) # best_val_accuracy
+            if accuracy is None and METRIC_FALLBACK_KEYS_ORDER[1] in metrics:
+                curve = metrics.get(METRIC_FALLBACK_KEYS_ORDER[1], [])
+                if curve: accuracy = curve[-1]
+
+            if accuracy is not None and accuracy > 0:
+                 key = tuple(value) if isinstance(value, list) else value
+                 value_accuracy_dict[key].append(accuracy)
+
+    avg_accuracy_per_value = { v: sum(accs)/len(accs) for v, accs in value_accuracy_dict.items() if accs }
+    return avg_accuracy_per_value
+
+
+def generate_slider_marks(experiments, param_name, param_values_sorted):
+    """Generates marks for a slider, showing average accuracy."""
+    avg_accuracy_map = calculate_avg_accuracy_per_value(experiments, param_name)
+    marks = {}
+    for value in param_values_sorted:
+        lookup_key = tuple(value) if isinstance(value, list) else value
+        avg_acc = avg_accuracy_map.get(lookup_key)
+        # Format label value nicely
+        if isinstance(value, tuple): label_value = f"({len(value)} items)"
+        elif isinstance(value, float): label_value = f"{value:.1e}" if abs(value) < 1e-3 or abs(value) > 1e4 else f"{value:.4g}"
+        else: label_value = str(value)
+
+        marks[value] = f"{label_value} ({avg_acc:.3f})" if avg_acc is not None else label_value
+    return marks
+
+# --- Dash App Setup ---
+
+def setup_dash_app(experiments):
+    """Sets up the Dash application layout and callbacks."""
+    if not experiments:
+        app = dash.Dash(__name__, assets_folder=ASSETS_FOLDER)
+        app.layout = html.Div([html.H3("No experiment data to visualize.")])
+        return app
+
+    # 1. Discover Parameters & Transform Data
+    canonical_param_order = discover_parameters_and_order(experiments)
+    transformed_data = transform_data(experiments, canonical_param_order)
+    if not transformed_data:
+        app = dash.Dash(__name__, assets_folder=ASSETS_FOLDER)
+        app.layout = html.Div([html.H3("No valid data points to visualize (check metrics).")])
+        return app
+
+    # Lookup dict: {parameters_tuple: (metrics_tuple, experiment_info_dict)}
+    transformed_data_dict = {params: (metrics, info) for params, metrics, info in transformed_data}
+
+    # 2. Analyze Parameters
+    param_value_map = build_param_value_map(transformed_data, canonical_param_order)
+    variable_params = {k: v for k, v in param_value_map.items() if len(v) > 1}
+    constant_params = {k: v[0] for k, v in param_value_map.items() if len(v) == 1}
+    num_variable_params = len(variable_params)
+    print(f"Discovered {len(canonical_param_order)} parameters. Variable: {num_variable_params}, Constant: {len(constant_params)}.")
+
+    # 3. Prepare Data for Plotting & Scaling
+    metrics_list = [metrics for _, metrics, _ in transformed_data]
+    df = pd.DataFrame(metrics_list, columns=METRIC_LABELS[:len(metrics_list[0])])
+    x_axis_label, y_axis_label = METRIC_LABELS[0], METRIC_LABELS[1]
+
+    if x_axis_label not in df.columns or y_axis_label not in df.columns:
+         app = dash.Dash(__name__, assets_folder=ASSETS_FOLDER)
+         app.layout = html.Div([html.H3(f"Error: Metric keys '{x_axis_label}' or '{y_axis_label}' not found.")])
+         return app
+
+    min_x, max_x = df[x_axis_label].min(), df[x_axis_label].max()
+    min_y, max_y = df[y_axis_label].min(), df[y_axis_label].max()
+    buffer_x = (max_x - min_x) * 0.1 if max_x > min_x else 1.0
+    buffer_y = (max_y - min_y) * 0.1 if max_y > min_y else 0.1
+
+    graph_layout = {
+        'xaxis': {'range': [min_x - buffer_x, max_x + buffer_x], 'title': x_axis_label},
+        'yaxis': {'range': [min_y - buffer_y, max_y + buffer_y], 'title': y_axis_label},
+        'margin': dict(l=40, r=40, t=40, b=40),
+        'hovermode': 'closest',
+        'legend': {'tracegroupgap': 5} # Add some space between legend groups
+    }
+
+    # 4. Find Best Experiment (based on Y-axis metric: Accuracy)
+    best_params_tuple, best_metric_value, best_exp_info = None, -float('inf'), {}
+    for params_tuple, metrics_tuple, exp_info in transformed_data:
+        if len(metrics_tuple) > 1 and metrics_tuple[1] > best_metric_value:
+            best_params_tuple, best_metric_value = params_tuple, metrics_tuple[1]
+            best_exp_info = exp_info
+
+    # Prepare info strings
+    constant_params_str = ", ".join([f"{k}={v}" for k, v in constant_params.items()])
+    constant_params_info = f"Fixed Parameters: {constant_params_str or 'None'}"
+
+    best_variable_params_dict = {}
+    if best_params_tuple:
+        for idx, param_name in enumerate(canonical_param_order):
+            if param_name in variable_params:
+                best_variable_params_dict[param_name] = best_params_tuple[idx]
+
+    highest_accuracy_info = "Highest Accuracy: Not Found"
+    if best_exp_info:
+         best_id = best_exp_info.get('experiment_id', 'unknown')
+         best_vars_str = ", ".join([f"{k}={v}" for k,v in best_variable_params_dict.items()])
+         highest_accuracy_info = (f"Highest Accuracy ({best_id}): {best_metric_value:.4f} "
+                                 f"with: {{{best_vars_str or 'N/A'}}}")
+
+
+    # 5. Setup Dash App Layout
+    app = dash.Dash(__name__, assets_folder=ASSETS_FOLDER)
+    colors = generate_colors(num_variable_params)
+    slider_css = generate_slider_css(num_variable_params, colors)
+    write_css_to_file(slider_css)
+
+    layout_children = [
+        html.H3(f"Cipher Classification - Experiment Visualizer ({len(experiments)} Experiments)",
+                style={'text-align': 'center', 'margin-bottom': '10px'}),
+        html.Div(id='subtitle', style={'text-align': 'center', 'margin-bottom': '20px'}),
+        dcc.Graph(id='output-graph', figure={'layout': graph_layout}, config={'displayModeBar': True}),
+        html.Div([
+            html.P(constant_params_info),
+            html.P(highest_accuracy_info),
+            html.P(id='current-params-info') # << NEW: Placeholder for current params
+        ], style={'padding': '10px', 'border': '1px solid #ddd', 'marginTop': '10px'}),
+    ]
+
+    # Create Sliders for Variable Parameters
+    slider_components = []
+    variable_params_list = sorted(variable_params.keys())
+
+    for idx, param_name in enumerate(variable_params_list):
+        values = variable_params[param_name]
+        min_val, max_val = values[0], values[-1]
+        initial_value = best_variable_params_dict.get(param_name, values[0])
+        marks = generate_slider_marks(experiments, param_name, values)
+
+        use_index_slider = not all(isinstance(v, (int, float)) for v in values)
+        if not use_index_slider and len(values) > 1 and isinstance(min_val, (int, float)):
+            steps = np.diff(values)
+            if not np.allclose(steps, steps[0]): use_index_slider = True
+
+        if use_index_slider:
+             slider_marks = {i: marks.get(values[i], str(values[i])) for i in range(len(values))}
+             slider_min, slider_max = 0, len(values) - 1
+             try: slider_value = values.index(initial_value)
+             except ValueError: slider_value = 0
+             slider_step = 1
+        else:
+             slider_marks = {val: marks.get(val, str(val)) for val in values}
+             slider_min, slider_max = float(min_val), float(max_val)
+             try: slider_value = float(initial_value)
+             except (ValueError, TypeError): slider_value = float(min_val)
+             slider_step = None
+
+        slider_components.append(html.Div([
+            html.Label(f'{param_name}'),
+            dcc.Slider(
+                id={'type': 'param-slider', 'index': param_name},
+                min=slider_min, max=slider_max, value=slider_value,
+                marks=slider_marks, step=slider_step, included=False,
+                className=f'slider-color-{idx+1}'
+            ),
+            dcc.Store(id={'type': 'slider-mode', 'index': param_name}, data={'use_index': use_index_slider, 'values': values if use_index_slider else None})
+        ], style={'padding': '10px 0px'}))
+
+    layout_children.extend(slider_components)
+    layout_children.append(dcc.Store(id='param-info-store', data={
+         'canonical_order': canonical_param_order,
+         'variable_params': variable_params_list,
+         'constant_params': constant_params
+    }))
+    app.layout = html.Div(layout_children)
+
+    # 6. Define Callbacks
+
+    @app.callback(
+        Output('output-graph', 'figure'),
+        Output('subtitle', 'children'),
+        Output('current-params-info', 'children'), # << NEW: Output for current params text
+        Input({'type': 'param-slider', 'index': dash.dependencies.ALL}, 'value'),
+        State('param-info-store', 'data'),
+        State({'type': 'slider-mode', 'index': dash.dependencies.ALL}, 'data')
+    )
+    def update_graph(slider_values, param_info, slider_modes):
+        canonical_order = param_info['canonical_order']
+        variable_params_keys = param_info['variable_params']
+        constant_params_dict = param_info['constant_params']
+
+        slider_value_map = {key: val for key, val in zip(variable_params_keys, slider_values)}
+        slider_mode_map = {key: mode_data for key, mode_data in zip(variable_params_keys, slider_modes)}
+
+        # Reconstruct the selected parameter values dictionary
+        current_params_dict = {}
+        for param_name in variable_params_keys:
+             slider_value = slider_value_map[param_name]
+             mode_info = slider_mode_map[param_name]
+             if mode_info['use_index']:
+                 try: current_params_dict[param_name] = mode_info['values'][slider_value]
+                 except IndexError: current_params_dict[param_name] = None
+             else:
+                 current_params_dict[param_name] = slider_value
+        current_params_dict.update(constant_params_dict) # Add constants
+
+        # Build the parameters_tuple key in the canonical order
+        try:
+            current_key_list = [current_params_dict.get(param_name) for param_name in canonical_order]
+            current_key_list = [tuple(v) if isinstance(v, list) else v for v in current_key_list]
+            current_key = tuple(current_key_list)
+        except TypeError as e:
+             fig = px.scatter(title=f"Error forming parameter key: {e}")
+             fig.update_layout(**graph_layout)
+             return fig, "Error", "Current Variables: Error"
+
+        # Default outputs
+        subtitle_text = "Selection Details"
+        current_params_text = "Current Variables: N/A"
+
+        # Look up the data for the current parameter combination
+        if current_key not in transformed_data_dict:
+            fig = px.scatter(x=[0], y=[0], opacity=0)
+            fig.add_annotation(text="Untested parameter combination", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(size=16))
+            fig.update_layout(**graph_layout, title="Untested Parameters")
+            subtitle_text = "Current selection has not been run."
+            current_params_text = "Current Variables: N/A (Untested)"
+
+        else:
+            current_metrics, current_exp_info = transformed_data_dict[current_key]
+            current_x, current_y = current_metrics[0], current_metrics[1] # Duration, Accuracy
+            exp_id = current_exp_info.get('experiment_id', 'unknown')
+
+            # Update Current Params Text
+            current_vars_dict = {k: current_params_dict[k] for k in variable_params_keys}
+            current_vars_str = ", ".join([f"{k}={v}" for k, v in current_vars_dict.items()])
+            current_params_text = f"Current. . . . . . . . . .({exp_id}): {current_y:.4f} with: {{{current_vars_str or 'None'}}}"
+
+            # Create the main scatter plot
+            fig_title = f"Experiment: {exp_id}"
+            subtitle_text = f"Showing: {x_axis_label}={current_x:.2f}, {y_axis_label}={current_y:.4f}"
+            if len(current_metrics) > 2 and not np.isnan(current_metrics[2]):
+                subtitle_text += f", {METRIC_LABELS[2]}={current_metrics[2]:.4f}"
+
+            fig = px.scatter(x=[current_x], y=[current_y],
+                             labels={'x': x_axis_label, 'y': y_axis_label},
+                             title=fig_title)
+            fig.update_traces(marker=dict(size=15, color='black', symbol='circle'), name='Current Selection')
+            fig.update_layout(**graph_layout)
+
+            # --- Add Ghost Points (Individual Traces) ---
+            for idx, param_name in enumerate(variable_params_keys):
+                param_color = colors[idx % len(colors)]
+                param_index_in_canon = canonical_order.index(param_name)
+                current_value = current_key[param_index_in_canon]
+                possible_values = variable_params[param_name]
+
+                try: current_value_index = possible_values.index(current_value)
+                except ValueError: continue # Skip ghosts if current value not in list
+
+                neighbors = []
+                if current_value_index > 0: neighbors.append({'value': possible_values[current_value_index - 1], 'direction': '↓', 'opacity': 0.4}) # Lower opacity for prev
+                if current_value_index < len(possible_values) - 1: neighbors.append({'value': possible_values[current_value_index + 1], 'direction': '↑', 'opacity': 0.7}) # Higher opacity for next
+
+                for neighbor in neighbors:
+                    neighbor_value, direction, opacity = neighbor['value'], neighbor['direction'], neighbor['opacity']
+                    neighbor_key_list = list(current_key)
+                    neighbor_key_list[param_index_in_canon] = neighbor_value
+                    neighbor_key = tuple(neighbor_key_list)
+
+                    if neighbor_key in transformed_data_dict:
+                        neighbor_metrics, neighbor_info = transformed_data_dict[neighbor_key]
+                        neighbor_x, neighbor_y = neighbor_metrics[0], neighbor_metrics[1]
+                        neighbor_id = neighbor_info.get('experiment_id', 'unknown')
+
+                        # Format neighbor value for display (similar to slider marks)
+                        if isinstance(neighbor_value, tuple): label_val_str = f"({len(neighbor_value)} items)"
+                        elif isinstance(neighbor_value, float): label_val_str = f"{neighbor_value:.1e}" if abs(neighbor_value)<1e-3 or abs(neighbor_value)>1e4 else f"{neighbor_value:.4g}"
+                        else: label_val_str = str(neighbor_value)
+
+                        # Legend label including accuracy
+                        label = f"{param_name} {direction} {label_val_str} ({neighbor_y:.3f})" # << UPDATED LEGEND LABEL
+
+                        hover_text = (f"<b>Experiment: {neighbor_id}</b><br>"
+                                      f"{x_axis_label}: {neighbor_x:.2f}<br>"
+                                      f"{y_axis_label}: {neighbor_y:.4f}<br>"
+                                      f"<i>Change: {param_name} {direction} {label_val_str}</i>")
+                        if len(neighbor_metrics) > 2 and not np.isnan(neighbor_metrics[2]):
+                            hover_text += f"<br>{METRIC_LABELS[2]}: {neighbor_metrics[2]:.4f}"
+
+                        custom_data = f"{param_name}:{neighbor_value}"
+
+                        # << NEW: Add individual scatter trace for each neighbor >>
+                        fig.add_scatter(
+                            x=[neighbor_x], y=[neighbor_y],
+                            mode='markers',
+                            marker=dict(
+                                size=12, # << CHANGED SIZE
+                                color=param_color,
+                                opacity=opacity,
+                                symbol='circle' # << CHANGED SYMBOL (filled)
+                            ),
+                            name=label, # Use descriptive name for legend
+                            legendgroup=param_name, # Group by parameter in legend
+                            hovertext=hover_text,
+                            hoverinfo='text',
+                            customdata=[custom_data] # Ensure customdata is a list/array
+                        )
+
+                        # Add connecting line
+                        fig.add_shape(type='line', x0=current_x, y0=current_y, x1=neighbor_x, y1=neighbor_y,
+                                      line=dict(color=param_color, width=1.5, dash='dot'), layer='below')
+
+        # Return figure and updated text elements
+        return fig, subtitle_text, current_params_text
+
+
+    @app.callback(
+        Output({'type': 'param-slider', 'index': dash.dependencies.ALL}, 'value'),
+        Input('output-graph', 'clickData'),
+        State({'type': 'param-slider', 'index': dash.dependencies.ALL}, 'id'),
+        State({'type': 'slider-mode', 'index': dash.dependencies.ALL}, 'data'),
+        prevent_initial_call=True
+    )
+    def handle_click_data(clickData, slider_ids, slider_modes_list):
+        ctx = dash.callback_context
+        trigger_id = ctx.triggered_id
+
+        if not isinstance(trigger_id, str) or trigger_id != 'output-graph' or not clickData or not clickData.get('points'):
+            return [no_update] * len(slider_ids)
+
+        point = clickData['points'][0]
+        if 'customdata' not in point or not point['customdata']:
+             # Might be click on main point, ignore for slider update
+            return [no_update] * len(slider_ids)
+
+        # Handle cases where customdata might be wrapped in a list/array from add_scatter
+        custom_data_raw = point['customdata']
+        custom_data_str = custom_data_raw[0] if isinstance(custom_data_raw, (list, np.ndarray)) and len(custom_data_raw) > 0 else custom_data_raw
+
+        if not isinstance(custom_data_str, str) or ':' not in custom_data_str:
+             print(f"Warning: Unexpected customdata format: {custom_data_raw}")
+             return [no_update] * len(slider_ids)
+
+        try:
+            clicked_param_name, value_str = custom_data_str.split(':', 1)
+        except ValueError:
+             print(f"Error: Failed to split customdata string: {custom_data_str}")
+             return [no_update] * len(slider_ids)
+
+        # Process state to build slider_mode_map
+        slider_mode_map = {}
+        try:
+            state_ids_full = ctx.states_list[0] # List of {'id': {'index': 'param', 'type': '...'}, 'property': 'value'}
+            state_modes_full = ctx.states_list[1] # List of {'id': {'index': 'param', 'type': '...'}, 'property': 'data', 'value':{...}}
+
+            for i in range(len(state_ids_full)):
+                id_item = state_ids_full[i]['id']
+                mode_item_value = state_modes_full[i]['value']
+                if id_item['type'] == 'param-slider' and state_modes_full[i]['id']['type'] == 'slider-mode':
+                     param_name = id_item['index']
+                     if isinstance(mode_item_value, dict) and 'use_index' in mode_item_value:
+                         slider_mode_map[param_name] = mode_item_value
+                     else: print(f"Warning: Invalid mode data structure for {param_name}")
+        except Exception as e:
+             print(f"Error processing state in click handler: {e}")
+             import traceback
+             traceback.print_exc()
+             return [no_update] * len(slider_ids)
+
+        # Find the target slider and its mode
+        target_slider_position = -1
+        target_slider_mode = slider_mode_map.get(clicked_param_name)
+        for i, id_dict in enumerate(slider_ids):
+            if id_dict.get('index') == clicked_param_name:
+                target_slider_position = i
+                break
+
+        if target_slider_position == -1 or target_slider_mode is None:
+            print(f"Warning: Could not find slider or mode for clicked param '{clicked_param_name}'")
+            return [no_update] * len(slider_ids)
+
+        # Determine the new value for the slider
+        new_slider_value = no_update
+        if target_slider_mode.get('use_index'):
+            possible_values = target_slider_mode.get('values', [])
+            found_index = -1
+            # Handle tuple conversion for lookup if needed
+            target_value = None
+            try:
+                 # Attempt to parse value_str back to original type for matching possible_values
+                 # This is tricky - safer to compare string representations
+                 pass # Keep value_str as string for comparison below
+            except: pass # Ignore parsing errors, rely on string match
+
+            for i, v in enumerate(possible_values):
+                 # Robust comparison using string representation
+                if value_str == str(v):
+                    found_index = i
+                    break
+            if found_index != -1: new_slider_value = found_index
+            else: print(f"Warning: Clicked value '{value_str}' not found in index slider options for '{clicked_param_name}'")
+        else:
+            try: new_slider_value = float(value_str)
+            except ValueError: print(f"Warning: Could not convert '{value_str}' to float for numeric slider '{clicked_param_name}'")
+
+        # Construct output
+        output_values = [no_update] * len(slider_ids)
+        if new_slider_value is not no_update:
+            output_values[target_slider_position] = new_slider_value
+
+        return output_values
+
+    return app
+
+# --- Main Execution ---
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Visualization tool for transformer experiment results")
-    parser.add_argument('--max_experiments', type=int, default=100,
-                      help="Maximum number of experiments to include")
-    parser.add_argument('--strict', action='store_true',
-                      help="Use strict filtering for experiments")
+    parser = argparse.ArgumentParser(description="Interactive visualization for cipher classification experiments.")
+    parser.add_argument('--max_experiments', type=int, default=None,
+                      help="Maximum number of most recent experiments to load.")
     parser.add_argument('--filter', type=str,
-                      help="Filter criteria: either a filter string (e.g., \"epochs=40;d_model=128,256\") or path to a JSON config file")
+                      help="Filter criteria: 'param=value;param2=v1,v2' string or path to JSON config.")
     args = parser.parse_args()
-    
-    # Load data with specified limit
-    data = load_data(max_experiments=args.max_experiments, use_strict_filters=args.strict)
-    
-    # Apply filter if provided
-    if args.filter:
-        filter_params = load_filter_config(args.filter)
-        if filter_params:
-            print(f"Applying filters: {filter_params}")
-            data = apply_filters(data, filter_params)
-            print(f"Showing {len(data)} experiments after filtering")
-    
-    app = setup_dash_app(data)
-    
-    # Run the app
-    app.run(debug=True)
 
+    all_experiments = load_data(max_experiments=args.max_experiments)
+
+    if args.filter:
+        filter_config = load_filter_config(args.filter)
+        filtered_experiments = apply_filters(all_experiments, filter_config) if filter_config else all_experiments
+    else:
+        filtered_experiments = all_experiments
+
+    if not filtered_experiments:
+        print("No experiments remaining after loading/filtering. Exiting.")
+    else:
+        print(f"Proceeding to visualize {len(filtered_experiments)} experiments.")
+        app = setup_dash_app(filtered_experiments)
+        app.run(debug=True)

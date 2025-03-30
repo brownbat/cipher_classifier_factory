@@ -1,17 +1,26 @@
+#!/usr/bin/env python3
 """
-Inference tool for the transformer-based cipher classifier.
-This tool loads the best performing models and evaluates text samples.
+Query Tool for Cipher Classification Models
+
+Loads a specified trained model (by experiment ID) or identifies top-performing
+models from completed experiments, then classifies provided text samples or
+default samples.
 """
 import json
-import pickle
 import torch
 import string
-import torch.nn.functional as F
-from sklearn.preprocessing import LabelEncoder
-from models.transformer.model import TransformerClassifier
-from models.common.data import custom_text_tokenizer
+import argparse
+import os
+import sys
 
-DEFAULT_COMPLETED_FILE = 'data/completed_experiments.json'
+# --- Use utilities ---
+import models.common.utils as utils
+# --- Use standardized inference functions ---
+from models.transformer.inference import load_model, classify_text
+
+# Default path, using utils
+DEFAULT_COMPLETED_FILE = utils.COMPLETED_EXPERIMENTS_FILE
+
 
 # Sample test texts
 E1 = """When the people of America reflect that they are now called upon to decide a question, which, in its consequences, must prove one of the most important that ever engaged their attention, the propriety of their taking a very comprehensive, as well as a very serious, view of it, will be evident.
@@ -50,200 +59,167 @@ VTTMZFPKWGDKZXTJCDIGKUHUAUEKCAR"""
 DEFAULT_TEXTS = {"english": E1, "k1": K1, "k2": K2, "k3": K3, "k4": K4}
 
 
-def get_top_experiments(completed_experiments_file=DEFAULT_COMPLETED_FILE, top_n=5, sort_key='val_accuracy'):
+def find_experiments_for_query(args):
     """
-    Get the top performing experiments sorted by a specified metric.
-    
+    Identifies experiment IDs to query based on command-line arguments.
+
     Args:
-        completed_experiments_file (str): Path to the completed experiments JSON file
-        top_n (int): Number of top experiments to return
-        sort_key (str): Metric to sort by ('val_accuracy' or 'val_loss')
-        
+        args: Parsed argparse arguments.
+
     Returns:
-        list: UIDs of the top performing experiments
+        list: A list of experiment IDs to query.
+              Returns an empty list if none are found or an error occurs.
     """
-    with open(completed_experiments_file, 'r') as f:
-        experiments = json.load(f)
+    target_ids = []
+    if args.experiment_id:
+        target_ids = args.experiment_id # Use IDs directly provided
+        # Optionally verify these IDs exist using utils.get_experiment_config_by_id
+        valid_ids = []
+        for exp_id in target_ids:
+             config = utils.get_experiment_config_by_id(exp_id)
+             if config and config.get('model_filename'): # Check if likely completed
+                  valid_ids.append(exp_id)
+             else:
+                  print(f"Warning: Experiment ID '{exp_id}' not found or appears incomplete. Skipping.")
+        target_ids = valid_ids
 
-    # Warn if using a non-standard metric for sorting
-    standard_metrics = ['val_accuracy', 'val_loss']
-    if sort_key not in standard_metrics:
-        print(f"WARNING: Sorting models by '{sort_key}' may produce unexpected results.")
-        print("For quality ranking, 'val_accuracy' or 'val_loss' are recommended.")
-    
-    # Sorting experiments based on the last value of the specified metric
-    sorted_experiments = sorted(
-        experiments,
-        key=lambda x: x['metrics'][sort_key][-1],
-        reverse=(sort_key != 'val_loss' and sort_key != 'train_loss')  # Reverse for accuracy, not for losses
-    )
+    elif args.top_n:
+        print(f"Finding top {args.top_n} experiments based on '{args.sort_key}'...")
+        experiments = utils.safe_json_load(DEFAULT_COMPLETED_FILE)
+        if not experiments:
+            print(f"Error: No completed experiments found in {DEFAULT_COMPLETED_FILE}")
+            return []
 
-    sorted_uids = [experiment['uid'] for experiment in sorted_experiments]
-
-    return sorted_uids[:top_n]
-
-
-def get_experiment(model_uid, completed_experiments_file=DEFAULT_COMPLETED_FILE):
-    """
-    Get experiment details by UID.
-    
-    Args:
-        model_uid (str): Experiment UID to look up
-        completed_experiments_file (str): Path to the completed experiments JSON file
-        
-    Returns:
-        dict: Experiment details
-    """
-    with open(completed_experiments_file, 'r') as f:
-        experiments = json.load(f)
-    target_experiment = next((exp for exp in experiments if exp['uid'] == model_uid), None)
-
-    if not target_experiment:
-        raise FileNotFoundError(f"Experiment with UID {model_uid} not found.")
-
-    return target_experiment
+        # Filter experiments that have the sort key metric and are likely valid
+        valid_experiments = []
+        for exp in experiments:
+            metric_val = exp.get('metrics', {}).get(args.sort_key)
+            # Check if metric exists and is a finite number, and model file exists
+            if metric_val is not None and isinstance(metric_val, (int, float)) and \
+               math.isfinite(metric_val) and exp.get('model_filename'):
+                valid_experiments.append(exp)
+            # Handle cases where metric is a list (use best or last?) - Use 'best' metric directly
+            elif args.sort_key == 'best_val_accuracy' or args.sort_key == 'best_val_loss':
+                 best_metric_val = exp.get('metrics', {}).get(args.sort_key)
+                 if best_metric_val is not None and isinstance(best_metric_val, (int, float)) and \
+                    math.isfinite(best_metric_val) and exp.get('model_filename'):
+                      valid_experiments.append(exp)
 
 
-def load_model(model_uid, completed_experiments_file=DEFAULT_COMPLETED_FILE):
-    """
-    Load a transformer model and its metadata by experiment UID.
-    
-    Args:
-        model_uid (str): Experiment UID
-        completed_experiments_file (str): Path to completed experiments file
-        
-    Returns:
-        dict: Contains model, token_dict, label_encoder, and hyperparams
-    """
-    # Get experiment details
-    target_experiment = get_experiment(model_uid)
-    
-    # Get file paths
-    model_filename = target_experiment.get('model_filename')
-    metadata_filename = target_experiment.get('metadata_filename')
-    
-    if not model_filename or not metadata_filename:
-        raise ValueError(f"Model or metadata filename not found for experiment {model_uid}")
-    
-    # Use GPU if available
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if torch.cuda.is_available():
-        print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+        if not valid_experiments:
+             print(f"Error: No valid experiments found with metric '{args.sort_key}'.")
+             return []
+
+        try:
+            # Sort based on the specific metric value
+            reverse_sort = (args.sort_key == 'best_val_accuracy') # Higher accuracy is better
+            sorted_experiments = sorted(
+                valid_experiments,
+                key=lambda x: x['metrics'][args.sort_key],
+                reverse=reverse_sort
+            )
+            target_ids = [exp['experiment_id'] for exp in sorted_experiments[:args.top_n] if 'experiment_id' in exp]
+        except KeyError:
+            print(f"Error: Metric '{args.sort_key}' not found consistently in experiments.")
+            return []
+        except Exception as e:
+             print(f"Error sorting experiments: {e}")
+             return []
+
     else:
-        print("GPU not available, using CPU")
-    
-    # Load model to the appropriate device
-    model = torch.load(model_filename, map_location=device)
-    model.eval()
-    
-    # Load metadata
-    with open(metadata_filename, 'rb') as f:
-        metadata = pickle.load(f)
-    
-    # Extract necessary components
-    token_dict = metadata['token_dict']
-    
-    # Reconstruct label encoder
-    label_encoder = LabelEncoder()
-    label_encoder.classes_ = metadata['label_encoder_classes']
-    
-    return {
-        "model": model,
-        "token_dict": token_dict,
-        "label_encoder": label_encoder,
-        "hyperparams": metadata['hyperparams'],
-        "device": device
-    }
+        # Should not happen if argparse group is required, but handle defensively
+        print("Error: No experiment selection criteria provided (--experiment_id or --top_n).")
+        return []
 
+    if not target_ids:
+         print("No experiments selected to query.")
 
-def preprocess_text(input_text, token_dict, max_length=500):
-    """
-    Preprocess text for transformer model input.
-    
-    Args:
-        input_text (str): Text to preprocess
-        token_dict (dict): Token dictionary for tokenization
-        max_length (int): Maximum sequence length
-        
-    Returns:
-        torch.Tensor: Preprocessed text tensor
-    """
-    # Convert input_text to lowercase
-    input_text = input_text.lower()
-    
-    # Tokenize using custom_text_tokenizer
-    tokenized_text = custom_text_tokenizer(input_text, token_dict)[:max_length]
-    
-    # Convert to tensor and add batch dimension
-    padded_text = torch.tensor(tokenized_text, dtype=torch.long).unsqueeze(0)
-    
-    return padded_text
-
-
-def predict_with_model(model_uid, text_to_test):
-    """
-    Make a prediction using a transformer model.
-    
-    Args:
-        model_uid (str): Experiment UID
-        text_to_test (str): Text to classify
-        
-    Returns:
-        str: Predicted cipher class
-    """
-    # Load model and metadata
-    model_data = load_model(model_uid)
-    model = model_data["model"]
-    token_dict = model_data["token_dict"]
-    label_encoder = model_data["label_encoder"]
-    device = model_data["device"]
-    
-    # Preprocess text
-    preprocessed_text = preprocess_text(text_to_test, token_dict)
-    # Move input to the same device as the model
-    preprocessed_text = preprocessed_text.to(device)
-    
-    # Make prediction
-    with torch.no_grad():
-        output = model(preprocessed_text)
-        probabilities = torch.nn.functional.softmax(output, dim=1)
-        predicted_index = output.argmax(dim=1).item()
-        predicted_label = label_encoder.inverse_transform([predicted_index])[0]
-    
-    return predicted_label
+    return target_ids
 
 
 def main():
-    """Run predictions on default texts with top models."""
-    print("Top performing models and their predictions:")
-    top_experiments = get_top_experiments(top_n=5)
-    
-    for experiment_uid in top_experiments:
-        print(f"\nExperiment: {experiment_uid}")
-        print('-' * 40)
-        
-        # Get experiment details
-        experiment = get_experiment(experiment_uid)
-        accuracy = experiment['metrics']['val_accuracy'][-1]
-        print(f"Validation accuracy: {accuracy:.4f}")
-        
-        # Transformer hyperparameters
-        hyperparams = experiment['hyperparams']
-        print(f"d_model: {hyperparams.get('d_model')}, nhead: {hyperparams.get('nhead')}")
-        print(f"num_encoder_layers: {hyperparams.get('num_encoder_layers')}")
-        print(f"dim_feedforward: {hyperparams.get('dim_feedforward')}")
-        
-        # Make predictions on default texts
+    """Loads model(s) and runs predictions."""
+    parser = argparse.ArgumentParser(description="Query trained cipher classification models.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-e', '--experiment_id', nargs='+', help='Specific experiment ID(s) to query.')
+    group.add_argument('-t', '--top_n', type=int, help="Query the top N performing models.")
+
+    parser.add_argument('-s', '--sort_key', default='best_val_accuracy',
+                        choices=['best_val_accuracy', 'best_val_loss'], # Restrict choices
+                        help="Metric to use for sorting top models (default: best_val_accuracy).")
+    parser.add_argument('--text', type=str, help="Custom text string to classify.")
+    parser.add_argument('--file', type=str, help="Path to a text file to classify.")
+
+    args = parser.parse_args()
+
+    # --- Determine Text Input ---
+    texts_to_classify = {}
+    if args.text:
+        texts_to_classify['custom_text'] = args.text
+    elif args.file:
+        try:
+            with open(args.file, 'r', encoding='utf-8') as f:
+                texts_to_classify[os.path.basename(args.file)] = f.read()
+        except Exception as e:
+            print(f"Error reading file '{args.file}': {e}")
+            sys.exit(1)
+    else:
+        print("No specific text/file provided, using default samples.")
+        texts_to_classify = DEFAULT_TEXTS
+
+    # --- Find Experiments to Query ---
+    experiment_ids = find_experiments_for_query(args)
+    if not experiment_ids:
+        sys.exit(1)
+
+    # --- Load and Query Each Model ---
+    for exp_id in experiment_ids:
+        print(f"\n--- Querying Experiment: {exp_id} ---")
+
+        # Construct relative paths
+        model_path_rel = f"data/models/{exp_id}.pt"
+        metadata_path_rel = f"data/models/{exp_id}_metadata.json"
+
+        # Load model using the standardized function from inference.py
+        loaded_data = load_model(model_path_rel, metadata_path_rel)
+
+        if loaded_data is None:
+            print(f"Failed to load model for {exp_id}. Skipping.")
+            continue
+
+        # Extract components
+        model = loaded_data['model']
+        token_dict = loaded_data['token_dict']
+        label_encoder = loaded_data['label_encoder']
+        hyperparams = loaded_data['hyperparams'] # Keep for display if needed
+        device = model.classifier.weight.device # Get device model is actually on
+
+        print(f"Model loaded successfully onto {device}.")
+        # Optionally print key hyperparams
+        # print(f"  Params: d={hyperparams.get('d_model')}, h={hyperparams.get('nhead')}, lyr={hyperparams.get('num_encoder_layers')}")
+
         print("\nPredictions:")
-        for text_key, text_value in DEFAULT_TEXTS.items():
-            try:
-                prediction = predict_with_model(experiment_uid, text_value)
-                print(f"  {text_key}: {prediction}")
-            except Exception as e:
-                print(f"  {text_key}: Error - {str(e)}")
-        
-        print("")
+        for name, text in texts_to_classify.items():
+            print(f"  Input: '{name}' ({len(text)} chars)")
+
+            # Classify text using the standardized function
+            result = classify_text(model, text, token_dict, label_encoder, device=device)
+
+            if "error" in result:
+                print(f"    Error: {result['error']}")
+            else:
+                predicted = result.get('predicted_class', 'N/A')
+                confidence = result.get('confidence', 0.0)
+                print(f"    Predicted: {predicted} (Confidence: {confidence:.4f})")
+                # Optionally print all probabilities
+                # print(f"    All Probabilities: {result.get('all_probabilities')}")
+
+        print("-" * (len(exp_id) + 25)) # Adjust separator length
 
 
 if __name__ == "__main__":
+    # Add math import needed by find_experiments_for_query
+    import math
+    # Ensure project root is found if running script directly
+    print(f"Project Root: {utils._PROJECT_ROOT}")
     main()

@@ -1,398 +1,472 @@
 #!/usr/bin/env python3
 """
-Utility to remove experiments from completed_experiments.json based on filter criteria,
-and delete their associated files.
+Utility to remove experiments from completed/pending logs, delete associated artifacts,
+and handle partial runs. Supports filtering or purging all experiments.
 """
 import json
 import os
 import sys
 import argparse
-from models.common.utils import safe_json_load, convert_ndarray_to_list
+import shutil # For potentially removing directories if needed later
+import glob   # For pattern matching files
 
+# Import common utilities
+try:
+    import models.common.utils as utils
+except ImportError:
+    print("ERROR: Cannot import models.common.utils. Ensure it's in the PYTHONPATH.")
+    sys.exit(1)
+
+# --- Configuration: Use paths derived from utils ---
+COMPLETED_FILE = utils.COMPLETED_EXPERIMENTS_FILE
+PENDING_FILE = utils.PENDING_EXPERIMENTS_FILE
+MODEL_DIR = os.path.join(utils._PROJECT_ROOT, 'data', 'models')
+METADATA_DIR = os.path.join(utils._PROJECT_ROOT, 'data', 'models') # Same dir
+CHECKPOINT_DIR = os.path.join(utils._PROJECT_ROOT, 'data', 'checkpoints')
+CM_HISTORY_DIR = os.path.join(utils._PROJECT_ROOT, 'data', 'cm_history') # New
+CM_GIF_DIR = os.path.join(utils._PROJECT_ROOT, 'data', 'cm')
+LOSS_GRAPH_DIR = os.path.join(utils._PROJECT_ROOT, 'data', 'loss_graphs')
+# Add other artifact directories if they exist (e.g., data/trend_matrix)
+
+# --- Filter Parsing --- (Keep existing functions, adjusted slightly for clarity)
 def parse_filter_string(filter_str):
-    """
-    Parse a filter string into a structured filter dictionary.
-    Format: "param1=val1,val2;param2=val3,val4"
-    
-    Example: "epochs=1,2;d_model=32;dropout_rate=0.1"
-    Returns: {
-        'hyperparams': {
-            'epochs': [1, 2],
-            'd_model': [32],
-            'dropout_rate': [0.1]
-        }
-    }
-    """
-    filter_params = {'hyperparams': {}}
-    
-    # Split by semicolons to get parameter groups
+    """Parses filter string like 'param=val1,val2;param2=val3'"""
+    filter_params = {'hyperparams': {}, 'data_params': {}}
     param_groups = filter_str.split(';')
-    
     for group in param_groups:
-        if not group.strip():
-            continue
-            
-        # Split by equals sign to get parameter name and values
-        if '=' in group:
-            param, values = group.split('=', 1)
-            param = param.strip()
-            
-            # Split values by comma
-            value_strings = [v.strip() for v in values.split(',')]
-            parsed_values = []
-            
-            for val in value_strings:
-                if not val:
-                    continue
-                    
-                try:
-                    # Try to convert to appropriate type
-                    if '.' in val:
-                        parsed_values.append(float(val))
-                    else:
-                        parsed_values.append(int(val))
-                except ValueError:
-                    parsed_values.append(val)
-            
-            filter_params['hyperparams'][param] = parsed_values
-    
+        if not group.strip() or '=' not in group: continue
+        param, values_str = group.split('=', 1)
+        param = param.strip()
+        value_strings = [v.strip() for v in values_str.split(',') if v.strip()]
+        parsed_values = []
+        for val in value_strings:
+            try: parsed_values.append(int(val))
+            except ValueError:
+                try: parsed_values.append(float(val))
+                except ValueError: parsed_values.append(val)
+
+        # Heuristic to determine if hyperparam or data_param
+        # Consider making this explicit if ambiguity arises
+        if param in ['ciphers', 'num_samples', 'sample_length']:
+             filter_params['data_params'][param] = parsed_values
+        else:
+             filter_params['hyperparams'][param] = parsed_values
     return filter_params
 
 def load_filter_config(filter_arg):
-    """
-    Load filter configuration from a string or file.
-    
-    Args:
-        filter_arg: Either a filter string or path to a JSON file
-        
-    Returns:
-        Dictionary containing filter parameters
-    """
-    # Check if the argument is a file path
+    """Loads filter from string or JSON file."""
     if os.path.exists(filter_arg) and filter_arg.endswith('.json'):
         try:
-            with open(filter_arg, 'r') as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            print(f"ERROR: Filter file '{filter_arg}' is not valid JSON")
-            return {}
+            with open(filter_arg, 'r') as f: return json.load(f)
         except Exception as e:
-            print(f"ERROR: Could not load filter file: {e}")
-            return {}
+            print(f"ERROR: Could not load filter file '{filter_arg}': {e}"); return None
     else:
-        # Treat as a filter string
-        try:
-            return parse_filter_string(filter_arg)
-        except Exception as e:
-            print(f"ERROR: Could not parse filter string: {e}")
-            return {}
+        try: return parse_filter_string(filter_arg)
+        except Exception as e: print(f"ERROR: Could not parse filter string: {e}"); return None
 
+# --- Matching Logic ---
 def match_experiment(exp, filter_params):
-    """
-    Check if an experiment matches any of the filter criteria.
-    Returns True if the experiment should be removed.
-    """
-    # Check hyperparameters
-    if 'hyperparams' in filter_params:
-        for param, filter_values in filter_params['hyperparams'].items():
-            if param in exp.get('hyperparams', {}):
-                if exp['hyperparams'][param] in filter_values:
-                    return True
-    
-    # Check data parameters
+    """Check if an experiment matches filter criteria (for --filter mode)."""
+    # Helper to check a value against filter list
+    def check_match(actual_value, filter_values):
+        # Handle list matching specifically for 'ciphers' if needed
+        # For now, assume exact match for simplicity
+        return actual_value in filter_values
+
+    # Match data parameters
     if 'data_params' in filter_params:
-        for param, filter_values in filter_params['data_params'].items():
-            if param in exp.get('data_params', {}):
-                if exp['data_params'][param] in filter_values:
-                    return True
-    
-    return False
+        exp_data = exp.get('data_params', {})
+        for param, values in filter_params['data_params'].items():
+            if param in exp_data and check_match(exp_data[param], values):
+                 return True # Return true if any data param matches
 
-def delete_experiment_files(experiment, thorough=False):
+    # Match hyperparameters
+    if 'hyperparams' in filter_params:
+        exp_hyper = exp.get('hyperparams', {})
+        for param, values in filter_params['hyperparams'].items():
+            if param in exp_hyper and check_match(exp_hyper[param], values):
+                 return True # Return true if any hyperparam matches
+
+    return False # No match found
+
+# --- File Deletion ---
+def delete_experiment_artifacts(exp_id, thorough=False, dry_run=False):
     """
-    Delete files associated with an experiment.
-    
-    Args:
-        experiment: The experiment data dictionary
-        thorough: If True, delete all associated files including visualizations
-                 If False, only delete model and checkpoint files
+    Delete ALL files associated with a specific experiment ID.
+    Uses glob for more robust finding of visualization files.
+    Returns a list of files that *would be* or *were* deleted.
     """
-    deleted_files = []
-    exp_id = experiment.get('experiment_id')
-    
-    # Always delete model file
-    model_file = experiment.get('model_filename')
-    if model_file and os.path.exists(model_file):
-        os.remove(model_file)
-        deleted_files.append(model_file)
-        print(f"Deleted: {model_file}")
-    
-    # Always delete metadata file
-    metadata_file = experiment.get('metadata_filename')
-    if metadata_file and os.path.exists(metadata_file):
-        os.remove(metadata_file)
-        deleted_files.append(metadata_file)
-        print(f"Deleted: {metadata_file}")
-    
-    # Delete visualization files if thorough cleanup requested
+    if not exp_id:
+        print("  Warning: Cannot delete files for missing experiment ID.")
+        return []
+
+    files_actioned = []
+    action = "Would delete" if dry_run else "Deleting"
+
+    # Helper to attempt removal using absolute path
+    def _remove_file(filepath_abs):
+        if filepath_abs and os.path.exists(filepath_abs):
+            filepath_rel = os.path.relpath(filepath_abs, utils._PROJECT_ROOT)
+            files_actioned.append(filepath_rel)
+            print(f"  {action}: {filepath_rel}")
+            if not dry_run:
+                try: os.remove(filepath_abs)
+                except Exception as e: print(f"    ERROR removing {filepath_rel}: {e}")
+        elif filepath_abs:
+             pass # File path constructed but doesn't exist
+
+    # Construct expected paths
+    model_path_abs = os.path.join(MODEL_DIR, f"{exp_id}.pt")
+    metadata_path_abs = os.path.join(METADATA_DIR, f"{exp_id}_metadata.json")
+    cm_history_path_abs = os.path.join(CM_HISTORY_DIR, f"{exp_id}_cm_history.npy")
+
+    # Delete specific files
+    _remove_file(model_path_abs)
+    _remove_file(metadata_path_abs)
+    _remove_file(cm_history_path_abs)
+
+    # Delete checkpoints using glob pattern
+    checkpoint_pattern = os.path.join(CHECKPOINT_DIR, f"{exp_id}_*.pt")
+    for chk_path in glob.glob(checkpoint_pattern):
+         _remove_file(chk_path)
+
+    # Delete visualizations if thorough cleanup requested
     if thorough:
-        # Delete confusion matrix file if it exists
-        if 'cm_gif_filename' in experiment:
-            cm_file = experiment['cm_gif_filename']
-            if os.path.exists(cm_file):
-                os.remove(cm_file)
-                deleted_files.append(cm_file)
-                print(f"Deleted: {cm_file}")
-        
-        # Check for loss graph files
-        if exp_id:
-            loss_dir = os.path.join("data", "loss_graphs")
-            if os.path.exists(loss_dir):
-                for filename in os.listdir(loss_dir):
-                    if filename.startswith(exp_id):
-                        filepath = os.path.join(loss_dir, filename)
-                        os.remove(filepath)
-                        deleted_files.append(filepath)
-                        print(f"Deleted: {filepath}")
-    
-    # Always check for checkpoint files
-    if exp_id:
-        checkpoint_dir = os.path.join("data", "checkpoints")
-        if os.path.exists(checkpoint_dir):
-            for filename in os.listdir(checkpoint_dir):
-                if filename.startswith(exp_id) and filename.endswith('.pt'):
-                    filepath = os.path.join(checkpoint_dir, filename)
-                    os.remove(filepath)
-                    deleted_files.append(filepath)
-                    print(f"Deleted: {filepath}")
-    
-    return deleted_files
+        # CM GIFs using glob pattern
+        cm_gif_pattern = os.path.join(CM_GIF_DIR, f"{exp_id}_*.gif")
+        for gif_path in glob.glob(cm_gif_pattern):
+            _remove_file(gif_path)
+        # CM Final PNGs using glob pattern (if generate_trend_matrix created them)
+        cm_png_pattern = os.path.join(CM_GIF_DIR, f"{exp_id}_*.png")
+        for png_path in glob.glob(cm_png_pattern):
+             _remove_file(png_path)
 
+
+        # <<< --- ADDED: Loss Graphs --- >>>
+        # Loss Graphs using glob pattern (PNG and GIF)
+        loss_graph_pattern_png = os.path.join(LOSS_GRAPH_DIR, f"{exp_id}_*.png")
+        loss_graph_pattern_gif = os.path.join(LOSS_GRAPH_DIR, f"{exp_id}_*.gif")
+        for loss_path in glob.glob(loss_graph_pattern_png) + glob.glob(loss_graph_pattern_gif):
+            _remove_file(loss_path)
+
+        # Add other visualization patterns here if needed (e.g., trend matrix)
+
+    return files_actioned
+
+# --- Partial Experiment Handling ---
 def find_partial_experiments():
-    """
-    Find experiments with checkpoint files but not in completed_experiments.json.
-    These are in-progress experiments that were interrupted.
-    
-    Returns a list of experiment IDs for partial experiments.
-    """
-    # Check for partial experiments (with checkpoint files but not completed)
-    checkpoint_dir = 'data/checkpoints'
-    pending_file = 'data/pending_experiments.json'
-    partial_exp_ids = []
-    
-    # Exit if checkpoints directory doesn't exist
-    if not os.path.exists(checkpoint_dir):
-        return partial_exp_ids
-        
-    # Get all checkpoint files
-    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pt')]
-    
-    # Get pending experiment IDs
-    pending_ids = []
-    if os.path.exists(pending_file):
-        try:
-            pending_exps = safe_json_load(pending_file)
-            pending_ids = [exp.get('experiment_id') for exp in pending_exps]
-        except Exception as e:
-            print(f"Error reading pending experiments: {e}")
-    
-    # Check each checkpoint file
-    for cf in checkpoint_files:
-        parts = cf.split('_')
-        exp_id = parts[0]
-        
-        # Only include if in pending queue
-        if exp_id in pending_ids:
-            partial_exp_ids.append(exp_id)
-    
-    return partial_exp_ids
+    """Find experiment IDs with artifacts but not in completed list."""
+    potential_partial_ids = set()
+
+    # Check Checkpoints
+    if os.path.exists(CHECKPOINT_DIR):
+        for filename in os.listdir(CHECKPOINT_DIR):
+            if filename.endswith('.pt'):
+                potential_partial_ids.add(filename.split('_')[0]) # Add base ID
+
+    # Check Models
+    if os.path.exists(MODEL_DIR):
+         for filename in os.listdir(MODEL_DIR):
+             if filename.endswith('.pt'):
+                 potential_partial_ids.add(filename.replace('.pt',''))
+             elif filename.endswith('_metadata.json'):
+                 potential_partial_ids.add(filename.replace('_metadata.json',''))
+
+    # Check CM History
+    if os.path.exists(CM_HISTORY_DIR):
+        for filename in os.listdir(CM_HISTORY_DIR):
+             if filename.endswith('_cm_history.npy'):
+                 potential_partial_ids.add(filename.replace('_cm_history.npy',''))
+
+    # Load completed IDs
+    completed_ids = set()
+    if os.path.exists(COMPLETED_FILE):
+         try:
+             completed_exps = utils.safe_json_load(COMPLETED_FILE)
+             completed_ids = {exp.get('experiment_id') for exp in completed_exps if exp.get('experiment_id')}
+         except Exception as e: print(f"Warning: Error reading completed file for partial check: {e}")
+
+    # Partial IDs are those found minus those completed
+    partial_ids = potential_partial_ids - completed_ids
+    return sorted(list(partial_ids))
 
 
 def cleanup_partial_experiment(exp_id, dry_run=True):
-    """
-    Clean up a partial experiment by:
-    1. Removing its checkpoint files
-    2. Removing it from the pending_experiments.json
+    """Remove ALL artifacts and pending entry for a partial experiment."""
+    files_actioned = []
+    action = "Would" if dry_run else "Will"
 
-    Returns list of deleted files.
-    """
-    deleted_files = []
-    
-    # Remove checkpoint files
-    checkpoint_dir = 'data/checkpoints'
-    if os.path.exists(checkpoint_dir):
-        for filename in os.listdir(checkpoint_dir):
-            if filename.startswith(exp_id) and filename.endswith('.pt'):
-                filepath = os.path.join(checkpoint_dir, filename)
-                if not dry_run:
-                    try:
-                        os.remove(filepath)
-                        print(f"Deleted: {filepath}")
-                    except Exception as e:
-                        print(f"Error deleting {filepath}: {e}")
-                deleted_files.append(filepath)
-    
-    # Remove from pending_experiments.json
-    pending_file = 'data/pending_experiments.json'
-    if os.path.exists(pending_file):
+    print(f"  {action} delete ALL artifacts for partial experiment: {exp_id}")
+    # Use the main artifact deletion function (ensure thorough is True for partial cleanup)
+    deleted_artifacts = delete_experiment_artifacts(exp_id, thorough=True, dry_run=dry_run)
+    files_actioned.extend(deleted_artifacts)
+
+    # Remove from pending queue
+    if os.path.exists(PENDING_FILE):
         try:
-            pending_exps = safe_json_load(pending_file)
+            pending_exps = utils.safe_json_load(PENDING_FILE)
             original_count = len(pending_exps)
-            
-            # Filter out the experiment
-            pending_exps = [exp for exp in pending_exps if exp.get('experiment_id') != exp_id]
-            
-            # Save the updated list if it changed
-            if len(pending_exps) != original_count and not dry_run:
-                with open(pending_file, 'w') as f:
-                    json.dump(pending_exps, f, indent=4)
-                print(f"Removed experiment {exp_id} from pending queue")
-        except Exception as e:
-            print(f"Error updating pending experiments: {e}")
-    
-    return deleted_files
+            filtered_pending = [exp for exp in pending_exps if exp.get('experiment_id') != exp_id]
+            if len(filtered_pending) < original_count:
+                print(f"  {action} remove entry from {os.path.basename(PENDING_FILE)}")
+                if not dry_run:
+                    with open(PENDING_FILE, 'w') as f:
+                        # Use utils converter just in case pending has numpy types
+                        json.dump(utils.convert_ndarray_to_list(filtered_pending), f, indent=2)
+            else:
+                 print(f"  Info: Experiment ID {exp_id} not found in pending queue.")
+        except Exception as e: print(f"  Error updating {os.path.basename(PENDING_FILE)}: {e}")
 
+    return files_actioned
 
+# --- Main Function ---
 def main():
-    parser = argparse.ArgumentParser(description='Remove experiments based on filter criteria')
-    
-    # Create a mode group for exclusive operation modes
+    parser = argparse.ArgumentParser(
+        description='Purge experiments and associated files.',
+        formatter_class=argparse.RawTextHelpFormatter # Keep help text formatting
+    )
+
+    # --- Mode Selection ---
     mode_group = parser.add_mutually_exclusive_group(required=True)
-    mode_group.add_argument('--filter', 
-                      help='Filter criteria: either a filter string (e.g., "epochs=1,2;d_model=32") or path to a JSON config file')
+    mode_group.add_argument('--filter',
+                      help='Filter criteria to select experiments for removal.\n'
+                           'Format: "param=val1,val2;param2=val3" OR path to JSON file.\n'
+                           'Example: "num_encoder_layers=1,2;learning_rate=1e-4"')
     mode_group.add_argument('--partial', action='store_true',
-                      help='Remove partial/incomplete experiments with checkpoints that have not been completed')
-    
-    # Options
+                      help='Clean up partial/incomplete experiments.\n'
+                           '(Finds IDs with artifacts but not in completed log)')
+    mode_group.add_argument('--all', action='store_true',
+                      help='Remove ALL completed experiments and their artifacts.')
+    mode_group.add_argument('--id', nargs='+',
+                      help='Specify one or more exact experiment IDs to remove.')
+
+
+    # --- Options ---
     parser.add_argument('--dry-run', action='store_true',
-                      help='Show what would be done without making changes')
+                      help='Show what would be done without making changes.')
     parser.add_argument('--no-confirm', action='store_true',
-                      help='Skip confirmation prompt')
+                      help='Skip confirmation prompt (USE WITH CAUTION!).')
     parser.add_argument('-v', '--verbose', action='store_true',
-                      help='Show detailed information about experiments being removed')
-    parser.add_argument('--inverse', action='store_true',
-                      help='Invert the filter - remove experiments that do NOT match the criteria')
+                      help='Show detailed information about experiments being affected.')
+    # Note: --inverse applies only to --filter mode implicitly now
+    # parser.add_argument('--inverse', action='store_true', help='(Only with --filter) Invert filter.')
     parser.add_argument('--thorough', action='store_true',
-                      help='Thoroughly clean up all associated visualization files')
-    parser.add_argument('--count-only', action='store_true',
-                      help='Show only count of affected experiments, not names')
-    
+                      help='Also delete associated visualization files (CM GIFs, Loss Graphs). Default for --all and --partial.')
+
     args = parser.parse_args()
-    
-    # Handle partial experiments mode
-    if args.partial:
-        print("Checking for partial/incomplete experiments...")
-        partial_exps = find_partial_experiments()
-        
-        if not partial_exps:
+    action_prefix = "[DRY RUN] " if args.dry_run else ""
+
+    # Determine operation mode and target experiments
+    target_experiments = []
+    operation_mode = "unknown"
+    load_completed = False # Flag to indicate if we need to load completed.json
+
+    if args.all:
+         operation_mode = "--all"
+         print(f"{action_prefix}--- Purge ALL Completed Experiments Mode ---")
+         load_completed = True
+         # Partial cleanup is also done in --all mode
+    elif args.partial:
+         operation_mode = "--partial"
+         print(f"{action_prefix}--- Clean Up Partial Experiments Mode ---")
+         # We find partial IDs directly, don't need completed list here
+    elif args.filter:
+         operation_mode = "--filter"
+         print(f"{action_prefix}--- Purge by Filter Mode ---")
+         load_completed = True
+    elif args.id:
+         operation_mode = "--id"
+         print(f"{action_prefix}--- Purge by Specific ID(s) Mode ---")
+         load_completed = True # Need to load to potentially remove entry
+
+    # --- Load Data if Needed ---
+    experiments = []
+    if load_completed:
+        experiments = utils.safe_json_load(COMPLETED_FILE)
+        print(f"Loaded {len(experiments)} experiments from '{os.path.basename(COMPLETED_FILE)}'")
+
+    # --- Identify Experiments to Remove ---
+    experiments_to_remove = []
+    ids_to_remove = set()
+
+    if operation_mode == "--all":
+        experiments_to_remove = experiments # Target all loaded completed experiments
+        ids_to_remove = {exp.get('experiment_id') for exp in experiments_to_remove if exp.get('experiment_id')}
+        # Also find and handle partial experiments later in this block
+    elif operation_mode == "--filter":
+        filter_params = load_filter_config(args.filter)
+        if not filter_params or (not filter_params.get('hyperparams') and not filter_params.get('data_params')):
+            print("No valid filter criteria loaded. Exiting.")
+            sys.exit(1)
+        print(f"Using filter criteria: {filter_params}")
+        # Determine if inverse matching is needed (implicitly handled by checking match result)
+        for exp in experiments:
+            matches = match_experiment(exp, filter_params)
+            # Remove if matches (default)
+            if matches:
+                experiments_to_remove.append(exp)
+                if exp.get('experiment_id'): ids_to_remove.add(exp.get('experiment_id'))
+        # Apply inverse logic if needed (though argparse doesn't have --inverse anymore)
+        # if args.inverse:
+        #     all_ids = {exp.get('experiment_id') for exp in experiments if exp.get('experiment_id')}
+        #     ids_to_remove = all_ids - ids_to_remove
+        #     experiments_to_remove = [exp for exp in experiments if exp.get('experiment_id') in ids_to_remove]
+
+    elif operation_mode == "--id":
+        target_ids = set(args.id)
+        print(f"Targeting specific IDs: {', '.join(target_ids)}")
+        for exp in experiments:
+             exp_id = exp.get('experiment_id')
+             if exp_id and exp_id in target_ids:
+                  experiments_to_remove.append(exp)
+                  ids_to_remove.add(exp_id)
+        # Also add IDs specified but not found in completed log (might be partial/pending)
+        ids_to_remove.update(target_ids)
+
+
+    # --- Handle --partial Separately or as part of --all ---
+    partial_ids_found = find_partial_experiments()
+    if operation_mode == "--partial":
+        if not partial_ids_found:
             print("No partial experiments found.")
             return
-            
-        print(f"Found {len(partial_exps)} partial experiment(s):")
-        for i, exp_id in enumerate(partial_exps, 1):
-            print(f"  {i}. {exp_id}")
-        
+        print(f"Found {len(partial_ids_found)} partial experiment(s): {', '.join(partial_ids_found)}")
+        # Confirmation and Execution for Partial Only
         if args.dry_run:
-            print("\nDRY RUN - No changes will be made")
+            print("\n[DRY RUN] Listing actions for partial experiments:")
+            total_files_to_delete = 0
+            for exp_id in partial_ids_found:
+                files = cleanup_partial_experiment(exp_id, dry_run=True)
+                total_files_to_delete += len(files)
+            print(f"\n[DRY RUN] Summary: Would attempt cleanup for {len(partial_ids_found)} partial IDs, targeting {total_files_to_delete} files.")
             return
-            
         if not args.no_confirm:
-            response = input("\nProceed with removing these partial experiments? (y/n): ")
-            if response.lower() != 'y':
-                print("Cancelled. No changes made.")
-                return
-                
-        # Clean up partial experiments
+             response = input("\nProceed with cleaning up these partial experiments? (y/n): ")
+             if response.lower() != 'y': print("Cancelled."); return
         print("\nCleaning up partial experiments...")
-        all_deleted_files = []
-        for exp_id in partial_exps:
-            deleted_files = cleanup_partial_experiment(exp_id, dry_run=False)
-            all_deleted_files.extend(deleted_files)
-            
-        print(f"\nSuccess! Removed {len(partial_exps)} partial experiments and deleted {len(all_deleted_files)} files.")
+        total_files_deleted = 0
+        for exp_id in partial_ids_found:
+             deleted = cleanup_partial_experiment(exp_id, dry_run=False)
+             total_files_deleted += len(deleted)
+        print(f"\n--- Partial Cleanup Complete ---")
+        print(f"Cleaned up {len(partial_ids_found)} partial experiments, deleting {total_files_deleted} files.")
+        return # Exit after partial cleanup mode
+
+    # --- Handle --all, --filter, --id ---
+
+    # Add partial experiments cleanup to --all mode implicitly
+    if operation_mode == "--all" and partial_ids_found:
+         print(f"Also found {len(partial_ids_found)} partial experiment(s) to clean up: {', '.join(partial_ids_found)}")
+         ids_to_remove.update(partial_ids_found) # Ensure partial IDs are targeted for file deletion
+
+    # Check if any action is needed
+    if not ids_to_remove:
+        if operation_mode == "--filter": print("No experiments matched the filter criteria.")
+        elif operation_mode == "--id": print("Specified IDs not found or have no artifacts.")
+        elif operation_mode == "--all": print("No completed or partial experiments found.")
         return
-    
-    # Handle filter mode (when --partial is not specified)
-    print("Loading experiments...")
-    completed_file = 'data/completed_experiments.json'
-    experiments = safe_json_load(completed_file)
-    print(f"Loaded {len(experiments)} experiments")
-    
-    # Parse filter criteria
-    filter_params = load_filter_config(args.filter)
-    if not filter_params:
-        print("No valid filter criteria provided. Exiting.")
-        sys.exit(1)
-        
-    print(f"Using filter criteria: {filter_params}")
-    
-    # Filter experiments
-    to_keep = []
-    to_remove = []
-    
-    for exp in experiments:
-        matches_filter = match_experiment(exp, filter_params)
-        # In normal mode, remove those that match; in inverse mode, remove those that don't match
-        if (matches_filter and not args.inverse) or (not matches_filter and args.inverse):
-            to_remove.append(exp)
-        else:
-            to_keep.append(exp)
-    
-    # Show results
-    matching_count = len(to_remove) if not args.inverse else len(to_keep)
-    non_matching_count = len(to_keep) if not args.inverse else len(to_remove)
-    
-    print(f"{matching_count} experiments match the filter, {non_matching_count} do not.")
-    print(f"{'INVERSE' if args.inverse else 'NORMAL'} mode: Remove those that fall {'outside' if args.inverse else 'within'} the filter.")
-    
-    # Show a summary of the experiments to be removed
-    should_show_names = args.verbose or (len(to_remove) <= 10 and not args.count_only)
-    if to_remove and should_show_names:
-        print("\nExperiments to remove:")
-        for i, exp in enumerate(to_remove, 1):
-            exp_id = exp.get('experiment_id', 'unknown')
-            
-            if args.verbose:
-                # Show more details in verbose mode
-                epochs = exp.get('hyperparams', {}).get('epochs', 'unknown')
-                actual_epochs = len(exp.get('metrics', {}).get('val_accuracy', [])) if 'metrics' in exp else 0
-                d_model = exp.get('hyperparams', {}).get('d_model', 'unknown')
-                nhead = exp.get('hyperparams', {}).get('nhead', 'unknown')
-                num_encoder_layers = exp.get('hyperparams', {}).get('num_encoder_layers', 'unknown')
-                print(f"  {i}. {exp_id} (epochs: {epochs}/{actual_epochs}, d_model: {d_model}, "
-                      f"nhead: {nhead}, layers: {num_encoder_layers})")
-            else:
-                # Just show experiment ID in normal mode
-                print(f"  {i}. {exp_id}")
-    
+
+    # Determine if 'thorough' cleanup is active
+    is_thorough = args.thorough or operation_mode == "--all" # Always thorough for --all
+
+    # Display targeted experiments/IDs
+    print(f"\nTargeting {len(ids_to_remove)} experiment ID(s) for removal:")
+    if args.verbose or len(ids_to_remove) <= 20:
+        for i, exp_id in enumerate(sorted(list(ids_to_remove)), 1):
+             print(f"  {i}. {exp_id}")
+        if len(ids_to_remove) > 20 and not args.verbose:
+            print("  ... (use -v to see all IDs)")
+    else: # Only show count if not verbose and many IDs
+        pass # Count already printed above
+
+    # Dry Run Output
     if args.dry_run:
-        print("\nDRY RUN - No changes will be made")
+        print(f"\n[DRY RUN] Listing actions for {len(ids_to_remove)} targeted IDs ({'THOROUGH' if is_thorough else 'Standard'} file cleanup):")
+        total_files_to_delete = 0
+        for exp_id in sorted(list(ids_to_remove)):
+            print(f"\n[DRY RUN] Processing ID: {exp_id}")
+            # Simulate artifact deletion for this ID
+            files = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=True)
+            total_files_to_delete += len(files)
+            # Simulate pending queue removal
+            print(f"  Would check and remove entry from {os.path.basename(PENDING_FILE)}")
+        # Simulate completed queue removal
+        num_to_remove_from_completed = len(experiments_to_remove) # Only relevant for --filter, --id, --all
+        if num_to_remove_from_completed > 0:
+             print(f"\n[DRY RUN] Would remove {num_to_remove_from_completed} entries from {os.path.basename(COMPLETED_FILE)}")
+
+        print(f"\n[DRY RUN] Summary: Would target {len(ids_to_remove)} IDs, ~{total_files_to_delete} files, and log entries.")
+        print("[DRY RUN] No changes made.")
         return
-    
-    # Confirm action
-    if not to_remove:
-        print("No matching experiments found. Nothing to do.")
-        return
-    
+
+    # Confirmation Prompt
     if not args.no_confirm:
-        response = input("\nProceed with removing these experiments? (y/n): ")
-        if response.lower() != 'y':
-            print("Cancelled. No changes made.")
+        print("\n" + "#" * 60)
+        print("###                  W A R N I N G                   ###")
+        print("#" * 60)
+        print(f"### This will PERMANENTLY DELETE artifacts for {len(ids_to_remove)}    ###")
+        print(f"### experiment ID(s) and remove log entries.         ###")
+        if is_thorough:
+             print("### (Including visualizations due to --thorough or --all) ###")
+        print("#" * 60)
+        confirm_phrase = "DELETE ALL" if operation_mode == "--all" else str(len(ids_to_remove))
+        response = input(f"Type '{confirm_phrase}' to confirm deletion: ")
+        if response != confirm_phrase:
+            print("Confirmation failed. Aborting.")
             return
-    
-    # Delete files and update experiments
-    print("\nDeleting associated files...")
-    deleted_files = []
-    for exp in to_remove:
-        deleted_files.extend(delete_experiment_files(exp, thorough=args.thorough))
-    
-    # Save updated experiments list
-    print("Saving updated experiments...")
-    with open(completed_file, 'w') as f:
-        to_keep = convert_ndarray_to_list(to_keep)
-        json.dump(to_keep, f, indent=4)
-    
-    print(f"\nSuccess! Removed {len(to_remove)} experiments and deleted {len(deleted_files)} files.")
+
+    # --- Execute Deletion ---
+    print("\nProceeding with deletion...")
+    total_deleted_files = 0
+
+    # Delete artifacts for all targeted IDs
+    print(f"Deleting artifacts for {len(ids_to_remove)} IDs...")
+    for exp_id in sorted(list(ids_to_remove)):
+        print(f"Processing {exp_id}...")
+        deleted = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=False)
+        total_deleted_files += len(deleted)
+
+    # Update pending experiments file
+    print(f"Checking and updating {os.path.basename(PENDING_FILE)}...")
+    try:
+        if os.path.exists(PENDING_FILE):
+            pending_exps = utils.safe_json_load(PENDING_FILE)
+            original_pending_count = len(pending_exps)
+            # Keep experiments whose ID is NOT in the removal set
+            filtered_pending = [exp for exp in pending_exps if exp.get('experiment_id') not in ids_to_remove]
+            removed_pending_count = original_pending_count - len(filtered_pending)
+            if removed_pending_count > 0:
+                with open(PENDING_FILE, 'w') as f:
+                    json.dump(utils.convert_ndarray_to_list(filtered_pending), f, indent=2)
+                print(f"  Removed {removed_pending_count} entry/entries from pending queue.")
+            else:
+                print("  No targeted IDs found in pending queue.")
+    except Exception as e:
+        print(f"  ERROR updating {os.path.basename(PENDING_FILE)}: {e}")
+
+
+    # Update completed experiments file
+    # We only modify completed if we loaded it and identified entries to remove
+    if load_completed and experiments_to_remove:
+        print(f"Updating {os.path.basename(COMPLETED_FILE)}...")
+        try:
+            # Keep experiments whose ID is NOT in the removal set
+            experiments_to_keep = [exp for exp in experiments if exp.get('experiment_id') not in ids_to_remove]
+            removed_completed_count = len(experiments) - len(experiments_to_keep)
+            with open(COMPLETED_FILE, 'w') as f:
+                json.dump(utils.convert_ndarray_to_list(experiments_to_keep), f, indent=2)
+            print(f"  Removed {removed_completed_count} entry/entries from completed log. Kept {len(experiments_to_keep)}.")
+        except Exception as e:
+            print(f"  ERROR updating {os.path.basename(COMPLETED_FILE)}: {e}")
+    elif load_completed:
+         print(f"No entries targeted for removal from {os.path.basename(COMPLETED_FILE)}.")
+
+
+    print(f"\n--- Purge Operation Complete ({operation_mode}) ---")
+    print(f"Processed {len(ids_to_remove)} experiment ID(s).")
+    print(f"Deleted {total_deleted_files} associated files.")
+
 
 if __name__ == "__main__":
+    print(f"Project Root: {utils._PROJECT_ROOT}") # Show root at start
     main()
