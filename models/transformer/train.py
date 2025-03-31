@@ -1566,7 +1566,7 @@ def compile_final_results(running_metrics: Dict[str, Any],
         'learning_rates': running_metrics.get('learning_rates', []),
         # Outcomes
         'epochs_completed': running_metrics.get('epochs_completed', 0),
-        'training_duration_seconds': total_duration,
+        'training_duration': total_duration,
         'stopped_early': running_metrics.get('stopped_early', False),
         'best_epoch': running_metrics.get('best_epoch', -1), # 1-based epoch num
         'best_val_loss': running_metrics.get('best_val_loss'),

@@ -48,7 +48,7 @@ PARAM_SPACE_DEFINITION = {
     'd_model': {'type': 'int', 'range': [32, 1024], 'scale': 'linear', 'step': 32},
     'nhead': {'type': 'int', 'values': [2, 4, 8, 16], 'scale': 'linear'},
     'num_encoder_layers': {'type': 'int', 'range': [1, 10], 'scale': 'linear', 'step': 1},
-    'dim_feedforward': {'type': 'int', 'range': [256, 2048], 'scale': 'linear', 'step': 64},
+    'dim_feedforward': {'type': 'int', 'range': [64, 2048], 'scale': 'linear', 'step': 64},
     'batch_size': {'type': 'int', 'values': [8, 16, 32, 64, 128, 256], 'scale': 'log'},
     'dropout_rate': {'type': 'float', 'range': [0.0, 0.5], 'scale': 'linear', 'step': 0.025},
     'base_patience': {'type': 'int', 'range': [3, 15], 'scale': 'linear', 'step': 1}, # ADDED
