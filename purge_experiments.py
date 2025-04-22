@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import argparse
+import datetime  # For --today mode
 import shutil # For potentially removing directories if needed later
 import glob   # For pattern matching files
 
@@ -236,10 +237,10 @@ def main():
                       help='Remove ALL completed experiments and their artifacts.')
     mode_group.add_argument('--id', nargs='+',
                       help='Specify one or more exact experiment IDs to remove.')
-    # <<< --- ADDED: --status argument --- >>>
     mode_group.add_argument('--status', nargs='+',
                       help='Specify one or more status values (e.g., crashed failed_or_interrupted) to remove.')
-    # <<< --- END ADD --- >>>
+    mode_group.add_argument('--today', action='store_true',
+                      help='Remove experiments from today (based on ID prefix) from completed experiments.')
 
 
     # --- Options ---
@@ -251,6 +252,8 @@ def main():
                       help='Show detailed information about experiments being affected.')
     parser.add_argument('--thorough', action='store_true',
                       help='Also delete associated visualization files. Default for --all and --partial.')
+    parser.add_argument('--keep-artifacts', action='store_true',
+                      help='Only remove entries from completed/pending files without deleting model files. Useful with --today.')
     # <<< --- REMOVED: Requeue argument (not needed) --- >>>
     # parser.add_argument('--requeue', action='store_true',
     #                   help='Attempt to add removed experiments back to the pending queue with new IDs.')
@@ -279,12 +282,14 @@ def main():
          operation_mode = "--id"
          print(f"{action_prefix}--- Purge by Specific ID(s) Mode ---")
          load_completed = True
-    # <<< --- ADDED: Handle --status mode --- >>>
     elif args.status:
          operation_mode = "--status"
          print(f"{action_prefix}--- Purge by Status Mode ---")
          load_completed = True
-    # <<< --- END ADD --- >>>
+    elif args.today:
+         operation_mode = "--today"
+         print(f"{action_prefix}--- Remove Today's Experiments Mode ---")
+         load_completed = True
 
     # --- Load Data if Needed ---
     experiments = []
@@ -324,7 +329,6 @@ def main():
                   ids_to_remove.add(exp_id)
         # Also add IDs specified but not found in completed log (might be partial/pending)
         ids_to_remove.update(target_ids)
-    # <<< --- ADDED: Filtering logic for --status --- >>>
     elif operation_mode == "--status":
          target_statuses = set(args.status)
          print(f"Targeting statuses: {', '.join(target_statuses)}")
@@ -333,7 +337,19 @@ def main():
              if exp_status and exp_status in target_statuses:
                  experiments_to_remove.append(exp)
                  if exp.get('experiment_id'): ids_to_remove.add(exp.get('experiment_id'))
-    # <<< --- END ADD --- >>>
+    elif operation_mode == "--today":
+         # Get today's date in YYYYMMDD format (same as experiment IDs)
+         today = datetime.datetime.now().strftime("%Y%m%d")
+         today_prefix = f"{today}-"
+         print(f"Targeting experiments from today with ID prefix: {today_prefix}")
+         initial_count = len(experiments)
+         for exp in experiments:
+             exp_id = exp.get('experiment_id')
+             if exp_id and exp_id.startswith(today_prefix):
+                 experiments_to_remove.append(exp)
+                 ids_to_remove.add(exp_id)
+         removed_count = len(experiments_to_remove)
+         print(f"Found {removed_count} experiment(s) from today ({removed_count}/{initial_count})")
 
 
     # --- Handle --partial Separately or as part of --all ---
@@ -380,52 +396,71 @@ def main():
     else: # Only show count if not verbose and many IDs
         pass # Count already printed above
 
-    # --- Dry Run Output --- (Mostly unchanged, just adjust confirmation phrase)
+    # --- Dry Run Output ---
     if args.dry_run:
-        print(f"\n[DRY RUN] Listing actions for {len(ids_to_remove)} targeted IDs ({'THOROUGH' if is_thorough else 'Standard'} file cleanup):")
-        total_files_to_delete = 0
-        for exp_id in sorted(list(ids_to_remove)):
-            print(f"\n[DRY RUN] Processing ID: {exp_id}")
-            # Simulate artifact deletion for this ID
-            files = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=True)
-            total_files_to_delete += len(files)
+        if args.keep_artifacts:
+            print(f"\n[DRY RUN] Would remove {len(ids_to_remove)} experiments from logs (keeping artifacts):")
+            # Simulate completed queue removal
+            num_to_remove_from_completed = len(experiments_to_remove)
+            if num_to_remove_from_completed > 0:
+                print(f"  Would remove {num_to_remove_from_completed} entries from {os.path.basename(COMPLETED_FILE)}")
             # Simulate pending queue removal
-            print(f"  Would check and remove entry from {os.path.basename(PENDING_FILE)}")
-        # Simulate completed queue removal
-        num_to_remove_from_completed = len(experiments_to_remove) # Only relevant for modes that load 'experiments'
-        if num_to_remove_from_completed > 0:
-             print(f"\n[DRY RUN] Would remove {num_to_remove_from_completed} entries from {os.path.basename(COMPLETED_FILE)}")
+            print(f"  Would check and remove entries from {os.path.basename(PENDING_FILE)}")
+            print(f"\n[DRY RUN] Summary: Would remove {len(ids_to_remove)} experiment entries from logs WITHOUT deleting model files.")
+        else:
+            print(f"\n[DRY RUN] Listing actions for {len(ids_to_remove)} targeted IDs ({'THOROUGH' if is_thorough else 'Standard'} file cleanup):")
+            total_files_to_delete = 0
+            for exp_id in sorted(list(ids_to_remove)):
+                print(f"\n[DRY RUN] Processing ID: {exp_id}")
+                # Simulate artifact deletion for this ID
+                files = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=True)
+                total_files_to_delete += len(files)
+                # Simulate pending queue removal
+                print(f"  Would check and remove entry from {os.path.basename(PENDING_FILE)}")
+            # Simulate completed queue removal
+            num_to_remove_from_completed = len(experiments_to_remove) # Only relevant for modes that load 'experiments'
+            if num_to_remove_from_completed > 0:
+                 print(f"\n[DRY RUN] Would remove {num_to_remove_from_completed} entries from {os.path.basename(COMPLETED_FILE)}")
 
-        print(f"\n[DRY RUN] Summary: Would target {len(ids_to_remove)} IDs, ~{total_files_to_delete} files, and log entries.")
+            print(f"\n[DRY RUN] Summary: Would target {len(ids_to_remove)} IDs, ~{total_files_to_delete} files, and log entries.")
+        
         print("[DRY RUN] No changes made.")
         return
 
-    # --- Confirmation Prompt --- (Adjusted phrase slightly)
+    # --- Confirmation Prompt ---
     if not args.no_confirm:
         print("\n" + "#" * 60)
         print("###                  W A R N I N G                   ###")
         print("#" * 60)
-        print(f"### This will PERMANENTLY DELETE artifacts for {len(ids_to_remove)}    ###")
-        print(f"### experiment ID(s) and remove log entries.         ###")
-        if is_thorough:
-             print("### (Including visualizations due to --thorough or --all) ###")
+        if args.keep_artifacts:
+            print(f"### This will remove {len(ids_to_remove)} experiment ID(s) from logs  ###")
+            print(f"### but keep all model files and artifacts.             ###")
+        else:
+            print(f"### This will PERMANENTLY DELETE artifacts for {len(ids_to_remove)}    ###")
+            print(f"### experiment ID(s) and remove log entries.         ###")
+            if is_thorough:
+                print("### (Including visualizations due to --thorough or --all) ###")
         print("#" * 60)
         confirm_phrase = "DELETE ALL" if operation_mode == "--all" else str(len(ids_to_remove))
-        response = input(f"Type '{confirm_phrase}' to confirm deletion based on mode '{operation_mode}': ") # Added mode context
+        response = input(f"Type '{confirm_phrase}' to confirm deletion based on mode '{operation_mode}': ")
         if response != confirm_phrase:
             print("Confirmation failed. Aborting.")
             return
 
-    # --- Execute Deletion --- (Unchanged)
+    # --- Execute Deletion ---
     print("\nProceeding with deletion...")
     total_deleted_files = 0
 
-    # Delete artifacts for all targeted IDs
-    print(f"Deleting artifacts for {len(ids_to_remove)} IDs...")
-    for exp_id in sorted(list(ids_to_remove)):
-        print(f"Processing {exp_id}...")
-        deleted = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=False)
-        total_deleted_files += len(deleted)
+    # Delete artifacts unless --keep-artifacts is specified
+    if not args.keep_artifacts:
+        print(f"Deleting artifacts for {len(ids_to_remove)} IDs...")
+        for exp_id in sorted(list(ids_to_remove)):
+            print(f"Processing {exp_id}...")
+            deleted = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=False)
+            total_deleted_files += len(deleted)
+    else:
+        print(f"Skipping artifact deletion (--keep-artifacts specified)")
+        print(f"Only removing {len(ids_to_remove)} IDs from experiment logs...")
 
     # Update pending experiments file
     print(f"Checking and updating {os.path.basename(PENDING_FILE)}...")
@@ -461,7 +496,10 @@ def main():
 
     print(f"\n--- Purge Operation Complete ({operation_mode}) ---")
     print(f"Processed {len(ids_to_remove)} experiment ID(s).")
-    print(f"Deleted {total_deleted_files} associated files.")
+    if args.keep_artifacts:
+        print(f"Kept all artifact files (--keep-artifacts specified).")
+    else:
+        print(f"Deleted {total_deleted_files} associated files.")
 
 
 if __name__ == "__main__":
