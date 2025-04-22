@@ -44,12 +44,17 @@ def _random_keyword(length=None):
     return random_keyword
 
 
-def english(length=None, keep_spaces=False):
+def english(length=None, text=None, keep_spaces=False, encode=True):
     '''
     Returns random strings of english text from leading project gutenberg texts
     Note that stored text is already preprocesesed and reduced to ascii
     with no spaces or symbols
+    
+    The text and encode parameters are included for compatibility with the cipher interface
+    but are not used. If text is provided, it is returned as-is (identity function).
     '''
+    if text is not None:
+        return text
     if length is None:
         length = random.randint(200,700)
     return book_processing.get_random_text_passage(length)
@@ -180,12 +185,17 @@ def autokey(length=None, text=None, key=None, encode=True):
     return result
 
 
-def random_noise(length=None, characters=string.ascii_lowercase):
+def random_noise(length=None, text=None, characters=string.ascii_lowercase, encode=True):
     """
     Generates a string of random characters of the specified length drawning
     from `characters`.
+    
+    The text and encode parameters are included for compatibility with the cipher interface
+    but are not used. If text is provided, its length is used instead of the length parameter.
     """
-    if length is None:
+    if text is not None:
+        length = len(text)
+    elif length is None:
         length = random.randint(200,700)
     return ''.join(random.choice(characters) for _ in range(length))
 

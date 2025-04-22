@@ -34,6 +34,7 @@ credentials.json
 # --- Specific Files to Ignore (Project Notes, Old Code) ---
 TODO.md
 CLAUDE.md
+codex.md
 findings.md # Or track this if it's formal results
 # experiment_analyzer-2.py
 folder-snapshot.md

@@ -48,7 +48,7 @@ except ImportError as e:
 # Default parameter settings for experiments
 # Learning rate removed, it's now determined automatically in train.py
 DEFAULT_PARAMS = {
-    'ciphers': [_get_cipher_names()],
+    'cipher_names': [_get_cipher_names()],  # Changed from 'ciphers' to 'cipher_names'
     'num_samples': [100000],
     'sample_length': [500],
     # Transformer hyperparameters
@@ -145,17 +145,17 @@ def process_args(args: argparse.Namespace) -> Dict[str, List[Any]]:
             if not all(c == c.lower() for c in all_ciphers_lower):
                  print("Warning: _get_cipher_names() in ciphers.py did not return all lowercase names. Converting.")
                  all_ciphers_lower = [c.lower() for c in all_ciphers_lower]
-            params['ciphers'] = [all_ciphers_lower] # Wrap in outer list for itertools.product
+            params['cipher_names'] = [all_ciphers_lower] # Wrap in outer list for itertools.product
         else:
             # Use the lowercased list provided by user
-            params['ciphers'] = [lowercase_ciphers_arg] # Wrap in outer list
+            params['cipher_names'] = [lowercase_ciphers_arg] # Wrap in outer list
     else:
         # Use default (ensure it's lowercase)
         all_ciphers_lower = _get_cipher_names()
         if not all(c == c.lower() for c in all_ciphers_lower):
              print("Warning: _get_cipher_names() in ciphers.py did not return all lowercase names. Converting default.")
              all_ciphers_lower = [c.lower() for c in all_ciphers_lower]
-        params['ciphers'] = [all_ciphers_lower]
+        params['cipher_names'] = [all_ciphers_lower]
 
     # Data parameters
     params['num_samples'] = _process_param('num_samples', args.num_samples, DEFAULT_PARAMS['num_samples'], int)
@@ -202,7 +202,7 @@ def generate_experiments(params: Dict[str, List[Any]]) -> List[Dict]:
     invalid_combinations_details = []
 
     # Identify which keys belong to data_params vs hyperparams based on current structure
-    data_param_keys = {'ciphers', 'num_samples', 'sample_length'}
+    data_param_keys = {'cipher_names', 'num_samples', 'sample_length'}
 
     for i, combination in enumerate(combinations):
         param_dict = dict(zip(keys, combination))
@@ -221,11 +221,27 @@ def generate_experiments(params: Dict[str, List[Any]]) -> List[Dict]:
             elif d_model % nhead != 0:
                 is_valid = False
                 validation_errors.append(f"d_model ({d_model}) is not divisible by nhead ({nhead}).")
+            elif d_model % 2 != 0:
+                is_valid = False
+                validation_errors.append(f"d_model ({d_model}) must be even due to current positional encoding implementation.")
 
         dropout = hyperparams.get('dropout_rate')
         if dropout is not None and not (0.0 <= dropout <= 1.0):
             is_valid = False
             validation_errors.append(f"dropout_rate ({dropout}) must be between 0.0 and 1.0.")
+            
+        # Validate minimum data size for LR Finder
+        batch_size = hyperparams.get('batch_size', DEFAULT_PARAMS['batch_size'][0])
+        num_samples = data_params.get('num_samples', DEFAULT_PARAMS['num_samples'][0])
+        if num_samples is not None and batch_size is not None:
+            train_samples = int(num_samples * 0.8)  # Assuming 80% train/20% validation split
+            min_batches_needed = 2  # LR Finder requires at least 2 iterations
+            if train_samples / batch_size < min_batches_needed:
+                is_valid = False
+                validation_errors.append(f"num_samples ({num_samples}) is too small for batch_size ({batch_size}). "
+                                          f"Need at least {min_batches_needed * batch_size} training samples "
+                                          f"(approximately {int(min_batches_needed * batch_size / 0.8)} total samples) "
+                                          f"for LR Finder to work properly.")
 
         # Add checks for any other constraints (e.g., scheduler params if added)
 

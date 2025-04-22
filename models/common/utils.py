@@ -86,9 +86,6 @@ _DEFAULT_DATA_DIR = _PROJECT_ROOT / 'data'
 PENDING_EXPERIMENTS_FILE = str(_DEFAULT_DATA_DIR / 'pending_experiments.json')
 COMPLETED_EXPERIMENTS_FILE = str(_DEFAULT_DATA_DIR / 'completed_experiments.json')
 
-# Print the found root and data directory for verification during startup/testing
-print(f"Project Root detected: {_PROJECT_ROOT}")
-print(f"Data Directory detected: {_DEFAULT_DATA_DIR}")
 
 
 # --- File/System Utilities ---

@@ -89,14 +89,19 @@ class TestCiphers(unittest.TestCase):
     def test_random_noise(self):
         print("\nTesting random noise ", end='')
         length = 10
-        noise = random_noise(length)
+        noise = random_noise(length=length)
         self.assertEqual(len(noise), length, "Random Noise incorrect length.")
         for char in noise:
             self.assertIn(
                 char, string.ascii_lowercase, "Character not in expected set.")
         length = 100
         self.assertNotEqual(
-            random_noise(length), random_noise(length), "Noise not random.")
+            random_noise(length=length), random_noise(length=length), "Noise not random.")
+        
+        # Test with text parameter
+        text = "Hello World"
+        noise_with_text = random_noise(text=text)
+        self.assertEqual(len(noise_with_text), len(text), "Random Noise with text parameter incorrect length.")
 
     def test_playfair_cipher(self):
         print("\nTesting playfair ", end='')
@@ -216,11 +221,23 @@ class TestCiphers(unittest.TestCase):
         self.assertEqual(decrypted.lower(), text.lower())
 
     def test_autokey_random_key_and_text(self):
-        text = english(50)
+        text = english(length=50)
         key = _random_keyword(10)
         encrypted = autokey(text=text, key=key, encode=True)
         decrypted = autokey(text=encrypted, key=key, encode=False)
         self.assertEqual(decrypted.lower(), text.lower())
+        
+    def test_english(self):
+        print("\nTesting english ", end='')
+        # Test with length parameter
+        length = 20
+        eng_text = english(length=length)
+        self.assertEqual(len(eng_text), length, "English text incorrect length")
+        
+        # Test with text parameter (identity function)
+        input_text = "helloworld"
+        output_text = english(text=input_text)
+        self.assertEqual(output_text, input_text, "English with text parameter should return the text unchanged")
 
 
 if __name__ == '__main__':
