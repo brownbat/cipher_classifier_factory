@@ -93,8 +93,14 @@ def match_experiment(exp, filter_params):
 # --- File Deletion ---
 def delete_experiment_artifacts(exp_id, thorough=False, dry_run=False):
     """
-    Delete ALL files associated with a specific experiment ID.
+    Delete files associated with a specific experiment ID.
     Uses glob for more robust finding of visualization files.
+    
+    Parameters:
+    - exp_id: The experiment ID to delete artifacts for
+    - thorough: Whether to delete visualization files too (default is to keep visualizations)
+    - dry_run: If True, only list what would be deleted without actually deleting
+    
     Returns a list of files that *would be* or *were* deleted.
     """
     if not exp_id:
@@ -115,15 +121,19 @@ def delete_experiment_artifacts(exp_id, thorough=False, dry_run=False):
                 except Exception as e: print(f"    ERROR removing {filepath_rel}: {e}")
         elif filepath_abs:
              pass # File path constructed but doesn't exist
+    
+    # Helper function removed (no longer needed)
 
     # Construct expected paths
     model_path_abs = os.path.join(MODEL_DIR, f"{exp_id}.pt")
     metadata_path_abs = os.path.join(METADATA_DIR, f"{exp_id}_metadata.json")
     cm_history_path_abs = os.path.join(CM_HISTORY_DIR, f"{exp_id}_cm_history.npy")
 
-    # Delete specific files
+    # Delete model files (always delete these)
     _remove_file(model_path_abs)
     _remove_file(metadata_path_abs)
+    
+    # Delete CM history
     _remove_file(cm_history_path_abs)
 
     # Delete checkpoints using glob pattern
@@ -131,19 +141,18 @@ def delete_experiment_artifacts(exp_id, thorough=False, dry_run=False):
     for chk_path in glob.glob(checkpoint_pattern):
          _remove_file(chk_path)
 
-    # Delete visualizations if thorough cleanup requested
+    # Delete visualization files only if thorough cleanup requested
     if thorough:
         # CM GIFs using glob pattern
         cm_gif_pattern = os.path.join(CM_GIF_DIR, f"{exp_id}_*.gif")
         for gif_path in glob.glob(cm_gif_pattern):
             _remove_file(gif_path)
+            
         # CM Final PNGs using glob pattern (if generate_trend_matrix created them)
         cm_png_pattern = os.path.join(CM_GIF_DIR, f"{exp_id}_*.png")
         for png_path in glob.glob(cm_png_pattern):
              _remove_file(png_path)
 
-
-        # <<< --- ADDED: Loss Graphs --- >>>
         # Loss Graphs using glob pattern (PNG and GIF)
         loss_graph_pattern_png = os.path.join(LOSS_GRAPH_DIR, f"{exp_id}_*.png")
         loss_graph_pattern_gif = os.path.join(LOSS_GRAPH_DIR, f"{exp_id}_*.gif")
@@ -154,30 +163,64 @@ def delete_experiment_artifacts(exp_id, thorough=False, dry_run=False):
 
     return files_actioned
 
-# --- Partial Experiment Handling ---
-def find_partial_experiments():
-    """Find experiment IDs with artifacts but not in completed list."""
-    potential_partial_ids = set()
-
+# --- Partial and Orphaned Experiment Handling ---
+def find_artifacts_on_disk():
+    """
+    Find all experiment artifacts on disk and organize by ID.
+    Returns a dictionary mapping experiment IDs to lists of associated file paths.
+    """
+    artifacts_by_id = {}
+    
+    # Helper to add a file to the artifacts dictionary
+    def add_artifact(exp_id, filepath):
+        if exp_id not in artifacts_by_id:
+            artifacts_by_id[exp_id] = []
+        artifacts_by_id[exp_id].append(filepath)
+    
     # Check Checkpoints
     if os.path.exists(CHECKPOINT_DIR):
         for filename in os.listdir(CHECKPOINT_DIR):
-            if filename.endswith('.pt'):
-                potential_partial_ids.add(filename.split('_')[0]) # Add base ID
+            if filename.endswith('.pt') and '_' in filename:
+                exp_id = filename.split('_')[0] # Extract ID
+                add_artifact(exp_id, os.path.join(CHECKPOINT_DIR, filename))
 
     # Check Models
     if os.path.exists(MODEL_DIR):
-         for filename in os.listdir(MODEL_DIR):
-             if filename.endswith('.pt'):
-                 potential_partial_ids.add(filename.replace('.pt',''))
-             elif filename.endswith('_metadata.json'):
-                 potential_partial_ids.add(filename.replace('_metadata.json',''))
+        for filename in os.listdir(MODEL_DIR):
+            if filename.endswith('.pt'):
+                exp_id = filename.replace('.pt','')
+                add_artifact(exp_id, os.path.join(MODEL_DIR, filename))
+            elif filename.endswith('_metadata.json'):
+                exp_id = filename.replace('_metadata.json','')
+                add_artifact(exp_id, os.path.join(MODEL_DIR, filename))
 
     # Check CM History
     if os.path.exists(CM_HISTORY_DIR):
         for filename in os.listdir(CM_HISTORY_DIR):
-             if filename.endswith('_cm_history.npy'):
-                 potential_partial_ids.add(filename.replace('_cm_history.npy',''))
+            if filename.endswith('_cm_history.npy'):
+                exp_id = filename.replace('_cm_history.npy','')
+                add_artifact(exp_id, os.path.join(CM_HISTORY_DIR, filename))
+    
+    # Check Visualization Files (CM GIFs/PNGs)
+    if os.path.exists(CM_GIF_DIR):
+        for filename in os.listdir(CM_GIF_DIR):
+            if (filename.endswith('.gif') or filename.endswith('.png')) and '_' in filename:
+                exp_id = filename.split('_')[0]
+                add_artifact(exp_id, os.path.join(CM_GIF_DIR, filename))
+    
+    # Check Loss Graphs
+    if os.path.exists(LOSS_GRAPH_DIR):
+        for filename in os.listdir(LOSS_GRAPH_DIR):
+            if (filename.endswith('.gif') or filename.endswith('.png')) and '_' in filename:
+                exp_id = filename.split('_')[0]
+                add_artifact(exp_id, os.path.join(LOSS_GRAPH_DIR, filename))
+    
+    return artifacts_by_id
+
+def find_partial_experiments():
+    """Find experiment IDs with artifacts but not in completed list."""
+    artifacts_by_id = find_artifacts_on_disk()
+    potential_partial_ids = set(artifacts_by_id.keys())
 
     # Load completed IDs
     completed_ids = set()
@@ -190,6 +233,42 @@ def find_partial_experiments():
     # Partial IDs are those found minus those completed
     partial_ids = potential_partial_ids - completed_ids
     return sorted(list(partial_ids))
+
+def find_orphaned_artifacts():
+    """
+    Find orphaned artifacts - files on disk not associated with any experiment in completed_experiments.json.
+    Returns a dictionary mapping experiment IDs to lists of associated file paths.
+    """
+    artifacts_by_id = find_artifacts_on_disk()
+    
+    # Load completed IDs
+    completed_ids = set()
+    if os.path.exists(COMPLETED_FILE):
+        try:
+            completed_exps = utils.safe_json_load(COMPLETED_FILE)
+            completed_ids = {exp.get('experiment_id') for exp in completed_exps if exp.get('experiment_id')}
+        except Exception as e: 
+            print(f"Warning: Error reading completed file for orphaned check: {e}")
+    
+    # Also check pending experiments
+    pending_ids = set()
+    if os.path.exists(PENDING_FILE):
+        try:
+            pending_exps = utils.safe_json_load(PENDING_FILE)
+            pending_ids = {exp.get('experiment_id') for exp in pending_exps if exp.get('experiment_id')}
+        except Exception as e:
+            print(f"Warning: Error reading pending file for orphaned check: {e}")
+    
+    # Combine all known IDs
+    known_ids = completed_ids.union(pending_ids)
+    
+    # Find orphaned artifacts
+    orphaned_artifacts = {}
+    for exp_id, file_paths in artifacts_by_id.items():
+        if exp_id not in known_ids:
+            orphaned_artifacts[exp_id] = file_paths
+    
+    return orphaned_artifacts
 
 
 def cleanup_partial_experiment(exp_id, dry_run=True):
@@ -241,6 +320,10 @@ def main():
                       help='Specify one or more status values (e.g., crashed failed_or_interrupted) to remove.')
     mode_group.add_argument('--today', action='store_true',
                       help='Remove experiments from today (based on ID prefix) from completed experiments.')
+    mode_group.add_argument('--list-orphaned', action='store_true',
+                      help='List orphaned artifact files not associated with any experiment in completed_experiments.json.')
+    mode_group.add_argument('--purge-orphaned', action='store_true',
+                      help='Delete orphaned artifact files not associated with any experiment in completed_experiments.json.')
 
 
     # --- Options ---
@@ -252,13 +335,14 @@ def main():
                       help='Show detailed information about experiments being affected.')
     parser.add_argument('--thorough', action='store_true',
                       help='Also delete associated visualization files. Default for --all and --partial.')
-    parser.add_argument('--keep-artifacts', action='store_true',
-                      help='Only remove entries from completed/pending files without deleting model files. Useful with --today.')
+    # Removed redundant keep-artifacts and keep-visuals flags, as the default behavior
+    # already keeps visualizations unless --thorough is specified
     # <<< --- REMOVED: Requeue argument (not needed) --- >>>
     # parser.add_argument('--requeue', action='store_true',
     #                   help='Attempt to add removed experiments back to the pending queue with new IDs.')
 
     args = parser.parse_args()
+    # Validation section removed (no longer needed)
     action_prefix = "[DRY RUN] " if args.dry_run else ""
 
     # Determine operation mode and target experiments
@@ -290,6 +374,14 @@ def main():
          operation_mode = "--today"
          print(f"{action_prefix}--- Remove Today's Experiments Mode ---")
          load_completed = True
+    elif args.list_orphaned:
+         operation_mode = "--list-orphaned"
+         print(f"{action_prefix}--- List Orphaned Artifacts Mode ---")
+         # No need to load completed experiments, the find_orphaned_artifacts function handles that
+    elif args.purge_orphaned:
+         operation_mode = "--purge-orphaned"
+         print(f"{action_prefix}--- Purge Orphaned Artifacts Mode ---")
+         # No need to load completed experiments, the find_orphaned_artifacts function handles that
 
     # --- Load Data if Needed ---
     experiments = []
@@ -352,7 +444,84 @@ def main():
          print(f"Found {removed_count} experiment(s) from today ({removed_count}/{initial_count})")
 
 
-    # --- Handle --partial Separately or as part of --all ---
+    # --- Handle Special Modes (--partial, --list-orphaned, --purge-orphaned) ---
+    
+    # --- Handle Orphaned Artifacts Modes ---
+    if operation_mode == "--list-orphaned" or operation_mode == "--purge-orphaned":
+        orphaned_artifacts = find_orphaned_artifacts()
+        
+        if not orphaned_artifacts:
+            print("No orphaned artifacts found.")
+            return
+            
+        total_files = sum(len(files) for files in orphaned_artifacts.values())
+        
+        print(f"Found {len(orphaned_artifacts)} experiment ID(s) with orphaned artifacts ({total_files} total files):")
+        
+        # Group artifacts by type for better reporting
+        for exp_id, files in sorted(orphaned_artifacts.items()):
+            print(f"\nExperiment ID: {exp_id}")
+            
+            # Count file types
+            visuals = [f for f in files if f.endswith(('.gif', '.png'))]
+            models = [f for f in files if f.endswith('.pt') and '/checkpoints/' not in f]
+            checkpoints = [f for f in files if '/checkpoints/' in f]
+            metadata = [f for f in files if f.endswith('_metadata.json')]
+            other = [f for f in files if f not in visuals + models + checkpoints + metadata]
+            
+            print(f"  - Models: {len(models)}")
+            print(f"  - Checkpoints: {len(checkpoints)}")
+            print(f"  - Visualization Files: {len(visuals)}")
+            print(f"  - Metadata Files: {len(metadata)}")
+            if other:
+                print(f"  - Other Files: {len(other)}")
+                
+            if args.verbose:
+                print("  Detailed file list:")
+                for f in sorted(files):
+                    print(f"    {f}")
+        
+        # If purge mode, proceed with deletion
+        if operation_mode == "--purge-orphaned":
+            if args.dry_run:
+                print(f"\n[DRY RUN] Would delete {total_files} orphaned files for {len(orphaned_artifacts)} experiments")
+                print("[DRY RUN] No changes made.")
+                return
+                
+            # Confirmation prompt
+            if not args.no_confirm:
+                print("\n" + "#" * 60)
+                print("###                  W A R N I N G                   ###")
+                print("#" * 60)
+                print(f"### This will PERMANENTLY DELETE {total_files} orphaned files  ###")
+                print(f"### from {len(orphaned_artifacts)} experiments without entries in logs.  ###")
+                print("#" * 60)
+                confirm_phrase = f"DELETE {len(orphaned_artifacts)}"
+                response = input(f"Type '{confirm_phrase}' to confirm deletion: ")
+                if response != confirm_phrase:
+                    print("Confirmation failed. Aborting.")
+                    return
+            
+            # Execute deletion
+            print("\nProceeding with deletion...")
+            total_deleted = 0
+            
+            for exp_id, files in orphaned_artifacts.items():
+                print(f"Deleting {len(files)} orphaned files for experiment {exp_id}...")
+                for filepath in files:
+                    try:
+                        os.remove(filepath)
+                        total_deleted += 1
+                        print(f"  Deleted: {filepath}")
+                    except Exception as e:
+                        print(f"  Error deleting {filepath}: {e}")
+            
+            print(f"\n--- Orphaned Artifact Purge Complete ---")
+            print(f"Deleted {total_deleted} orphaned files from {len(orphaned_artifacts)} experiments.")
+        
+        return
+    
+    # --- Handle Partial Experiments Mode ---
     partial_ids_found = find_partial_experiments()
     if operation_mode == "--partial":
         if not partial_ids_found:
@@ -398,31 +567,21 @@ def main():
 
     # --- Dry Run Output ---
     if args.dry_run:
-        if args.keep_artifacts:
-            print(f"\n[DRY RUN] Would remove {len(ids_to_remove)} experiments from logs (keeping artifacts):")
-            # Simulate completed queue removal
-            num_to_remove_from_completed = len(experiments_to_remove)
-            if num_to_remove_from_completed > 0:
-                print(f"  Would remove {num_to_remove_from_completed} entries from {os.path.basename(COMPLETED_FILE)}")
+        print(f"\n[DRY RUN] Listing actions for {len(ids_to_remove)} targeted IDs ({'THOROUGH' if is_thorough else 'Standard'} file cleanup):")
+        total_files_to_delete = 0
+        for exp_id in sorted(list(ids_to_remove)):
+            print(f"\n[DRY RUN] Processing ID: {exp_id}")
+            # Simulate artifact deletion for this ID
+            files = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=True)
+            total_files_to_delete += len(files)
             # Simulate pending queue removal
-            print(f"  Would check and remove entries from {os.path.basename(PENDING_FILE)}")
-            print(f"\n[DRY RUN] Summary: Would remove {len(ids_to_remove)} experiment entries from logs WITHOUT deleting model files.")
-        else:
-            print(f"\n[DRY RUN] Listing actions for {len(ids_to_remove)} targeted IDs ({'THOROUGH' if is_thorough else 'Standard'} file cleanup):")
-            total_files_to_delete = 0
-            for exp_id in sorted(list(ids_to_remove)):
-                print(f"\n[DRY RUN] Processing ID: {exp_id}")
-                # Simulate artifact deletion for this ID
-                files = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=True)
-                total_files_to_delete += len(files)
-                # Simulate pending queue removal
-                print(f"  Would check and remove entry from {os.path.basename(PENDING_FILE)}")
-            # Simulate completed queue removal
-            num_to_remove_from_completed = len(experiments_to_remove) # Only relevant for modes that load 'experiments'
-            if num_to_remove_from_completed > 0:
-                 print(f"\n[DRY RUN] Would remove {num_to_remove_from_completed} entries from {os.path.basename(COMPLETED_FILE)}")
+            print(f"  Would check and remove entry from {os.path.basename(PENDING_FILE)}")
+        # Simulate completed queue removal
+        num_to_remove_from_completed = len(experiments_to_remove) # Only relevant for modes that load 'experiments'
+        if num_to_remove_from_completed > 0:
+             print(f"\n[DRY RUN] Would remove {num_to_remove_from_completed} entries from {os.path.basename(COMPLETED_FILE)}")
 
-            print(f"\n[DRY RUN] Summary: Would target {len(ids_to_remove)} IDs, ~{total_files_to_delete} files, and log entries.")
+        print(f"\n[DRY RUN] Summary: Would target {len(ids_to_remove)} IDs, ~{total_files_to_delete} files, and log entries.")
         
         print("[DRY RUN] No changes made.")
         return
@@ -432,14 +591,12 @@ def main():
         print("\n" + "#" * 60)
         print("###                  W A R N I N G                   ###")
         print("#" * 60)
-        if args.keep_artifacts:
-            print(f"### This will remove {len(ids_to_remove)} experiment ID(s) from logs  ###")
-            print(f"### but keep all model files and artifacts.             ###")
+        print(f"### This will PERMANENTLY DELETE artifacts for {len(ids_to_remove)}    ###")
+        print(f"### experiment ID(s) and remove log entries.         ###")
+        if is_thorough:
+            print("### (Including visualizations due to --thorough or --all) ###")
         else:
-            print(f"### This will PERMANENTLY DELETE artifacts for {len(ids_to_remove)}    ###")
-            print(f"### experiment ID(s) and remove log entries.         ###")
-            if is_thorough:
-                print("### (Including visualizations due to --thorough or --all) ###")
+            print("### (Model files and checkpoints only, visualizations kept) ###")
         print("#" * 60)
         confirm_phrase = "DELETE ALL" if operation_mode == "--all" else str(len(ids_to_remove))
         response = input(f"Type '{confirm_phrase}' to confirm deletion based on mode '{operation_mode}': ")
@@ -451,16 +608,12 @@ def main():
     print("\nProceeding with deletion...")
     total_deleted_files = 0
 
-    # Delete artifacts unless --keep-artifacts is specified
-    if not args.keep_artifacts:
-        print(f"Deleting artifacts for {len(ids_to_remove)} IDs...")
-        for exp_id in sorted(list(ids_to_remove)):
-            print(f"Processing {exp_id}...")
-            deleted = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=False)
-            total_deleted_files += len(deleted)
-    else:
-        print(f"Skipping artifact deletion (--keep-artifacts specified)")
-        print(f"Only removing {len(ids_to_remove)} IDs from experiment logs...")
+    # Delete artifacts for all targeted IDs
+    print(f"Deleting artifacts for {len(ids_to_remove)} IDs...")
+    for exp_id in sorted(list(ids_to_remove)):
+        print(f"Processing {exp_id}...")
+        deleted = delete_experiment_artifacts(exp_id, thorough=is_thorough, dry_run=False)
+        total_deleted_files += len(deleted)
 
     # Update pending experiments file
     print(f"Checking and updating {os.path.basename(PENDING_FILE)}...")
@@ -496,10 +649,7 @@ def main():
 
     print(f"\n--- Purge Operation Complete ({operation_mode}) ---")
     print(f"Processed {len(ids_to_remove)} experiment ID(s).")
-    if args.keep_artifacts:
-        print(f"Kept all artifact files (--keep-artifacts specified).")
-    else:
-        print(f"Deleted {total_deleted_files} associated files.")
+    print(f"Deleted {total_deleted_files} associated files{' (including visualizations)' if is_thorough else ' (models and checkpoints only)'}.")
 
 
 if __name__ == "__main__":
