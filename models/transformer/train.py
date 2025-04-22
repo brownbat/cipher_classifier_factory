@@ -227,8 +227,10 @@ def save_checkpoint(checkpoint_path: str, model: nn.Module, optimizer: Optional[
         os.makedirs(os.path.dirname(abs_checkpoint_path), exist_ok=True)
         torch.save(checkpoint_data, abs_checkpoint_path, _use_new_zipfile_serialization=True, pickle_protocol=4)
 
-        status = "Best" if is_best else "Latest"
-        print(f"✅ {status} checkpoint saved: {checkpoint_path} (Epoch {epoch + 1})")
+        # Only print message for best checkpoint
+        if is_best:
+            checkpoint_filename = os.path.basename(checkpoint_path)
+            print(f"✅ Best checkpoint: {checkpoint_filename} (Epoch {epoch + 1})")
 
         # Clean up older checkpoints *only* when saving a 'latest' one to ensure
         # we don't delete the latest needed for resuming when only saving 'best'.
@@ -334,7 +336,6 @@ def setup_experiment_parameters(hyperparams: Dict[str, Any]) -> Optional[Dict[st
         print("❌ ERROR: 'experiment_id' missing in hyperparams. Cannot setup parameters.")
         return None
 
-    print(f"--- Setting up Experiment: {experiment_id} ---")
 
     # --- Parameter Extraction & Defaults ---
     batch_size = hyperparams.get('batch_size', 32)
@@ -363,13 +364,9 @@ def setup_experiment_parameters(hyperparams: Dict[str, Any]) -> Optional[Dict[st
         early_stopping_metric = 'val_loss'
     monitor_mode = 'min' if early_stopping_metric == 'val_loss' else 'max'
 
-    # --- Log Configuration ---
-    print(f"Raw Hyperparameters: {hyperparams}")
-    print(f"Using Base Patience: {base_patience}")
-    print(f"Derived LR Scheduler Patience: {lr_scheduler_patience}")
-    print(f"Derived Early Stopping Patience: {early_stopping_patience}")
-    print(f"Early Stopping: Monitor='{early_stopping_metric}', Mode='{monitor_mode}', MinDelta={early_stopping_min_delta if monitor_mode=='min' else 'N/A'}")
-    print(f"LR Scheduler: Factor={lr_scheduler_factor}, MinLR={lr_scheduler_min_lr}")
+    # --- Log Configuration (Simplified) ---
+    print(f"Model Config: d={d_model}, l={num_encoder_layers}, nhead={nhead}, ff={dim_feedforward}, bs={batch_size}, dr={dropout_rate:.2f}")
+    print(f"Training Config: ES-pat={early_stopping_patience}, LR-pat={lr_scheduler_patience}, ES-delta={early_stopping_min_delta:.4f}")
 
     # --- Compile Training Configuration Dictionary ---
     training_config = {
@@ -392,7 +389,6 @@ def setup_experiment_parameters(hyperparams: Dict[str, Any]) -> Optional[Dict[st
         # Example: weight_decay, optimizer_type if you add options later
     }
 
-    print("--- Experiment Setup Complete ---")
     return training_config
 
 
@@ -414,7 +410,6 @@ def prepare_data_for_training(data: pd.DataFrame, batch_size: int) -> Tuple[Opti
         - label_encoder (Optional[Any]): Fitted sklearn LabelEncoder instance.
         Returns (None, None, None, None, None, None) if any critical step fails.
     """
-    print("--- Preparing Data ---")
     try:
         # --- Determine Vocab Size and Number of Classes ---
         # Vocab size is fixed based on the tokenizer's character set
@@ -447,7 +442,6 @@ def prepare_data_for_training(data: pd.DataFrame, batch_size: int) -> Tuple[Opti
             return None, None, None, None, None, None
 
         print(f"DataLoaders created: Train batches={len(train_loader)}, Val batches={len(val_loader)}")
-        print("--- Data Preparation Complete ---")
         return train_loader, val_loader, vocab_size, num_classes, token_dict, label_encoder
 
     except KeyError as e:
@@ -519,7 +513,6 @@ def initialize_model_and_device(vocab_size: int,
         model.to(device)
         print(f"Model moved to {device}.")
 
-        print("--- Model and Device Initialization Complete ---")
         return model, device
 
     except KeyError as e:
@@ -797,7 +790,6 @@ def setup_optimizer_and_scheduler(model: nn.Module,
     print(f"LR Scheduler: ReduceLROnPlateau (Monitor='{scheduler_monitor_metric}', Mode='{scheduler_mode}', "
           f"Factor={lr_scheduler_factor}, Patience={lr_scheduler_patience}, MinLR={lr_scheduler_min_lr})")
 
-    print("--- Optimizer and Scheduler Setup Complete ---")
     return optimizer, scheduler
 
 
@@ -950,7 +942,6 @@ def load_training_state(latest_checkpoint_path: str,
         print(f"No valid checkpoint found at {latest_checkpoint_path} or loading failed. Starting fresh.")
         # training_state remains as initialized defaults
 
-    print("--- Load Training State Attempt Complete ---")
     return training_state
 
 
@@ -1289,7 +1280,9 @@ def update_training_state_after_epoch(training_state: Dict[str, Any],
         running_metrics[f'best_{es_metric_name}'] = best_metric_value
     elif scheduler_stepped: # Only increment if metric was valid but no improvement
         epochs_no_improve += 1
-        print(f"   No improvement in '{es_metric_name}' for {epochs_no_improve} epochs (Patience: {es_patience}).")
+        # Only print on first occurrence, every 5 epochs, or when near patience limit
+        if epochs_no_improve == 1 or epochs_no_improve % 5 == 0 or epochs_no_improve >= es_patience - 1:
+            print(f"   No improvement in '{es_metric_name}' for {epochs_no_improve} epochs (Patience: {es_patience}).")
 
     # --- Check if Early Stopping Patience Exceeded ---
     should_stop = False
@@ -1357,9 +1350,7 @@ def manage_checkpoints(is_best: bool,
 
     # Save the 'latest' checkpoint if requested (either by frequency or interruption)
     if save_latest:
-        # Add clarity if saving 'latest' because it was also the 'best' vs just frequency/interrupt
-        reason = "(Best)" if is_best else "(Frequency/Interrupt)"
-        print(f"   Saving latest checkpoint for epoch {epoch + 1} {reason}...")
+        # Silently save latest checkpoint without printing a message
         save_checkpoint(
             checkpoint_path=checkpoint_paths['latest'], # Pass relative path
             model=model,
@@ -1621,7 +1612,7 @@ def compile_final_results(running_metrics: Dict[str, Any],
 
 
 def train_model(data: pd.DataFrame,
-                hyperparams: Dict[str, Any],
+                hyperparams: Dict[str, Any], # This now includes data_params nested inside
                 check_continue_func: callable # Function to check for interruption signal
                ) -> Tuple[Optional[nn.Module], Optional[Dict], Optional[Dict], Optional[str]]:
     """
@@ -1629,14 +1620,13 @@ def train_model(data: pd.DataFrame,
 
     Handles parameter setup, data prep, model init, LR finding, checkpointing,
     training loop, early stopping, metric collection, results compilation,
-    and cooperative interruption handling.
+    and cooperative interruption handling. Correctly handles initial LR on resume.
 
     Args:
         data (pd.DataFrame): DataFrame with 'text' and 'cipher' columns.
         hyperparams (Dict[str, Any]): Dictionary of hyperparameters for training.
-                                       Must include 'experiment_id'.
-        check_continue_func (callable): A function that returns False if training should stop
-                                        due to an external signal (e.g., Ctrl+C).
+                                       MUST include 'experiment_id' and nested 'data_params'.
+        check_continue_func (callable): A function that returns False if training should stop.
 
     Returns:
         Tuple containing:
@@ -1648,19 +1638,25 @@ def train_model(data: pd.DataFrame,
     # --- 1. Setup Experiment ---
     training_config = setup_experiment_parameters(hyperparams)
     if training_config is None:
-        return None, None, None, None # Critical setup failed
+        # Need minimal metadata for caller if setup fails
+        minimal_metadata = {'experiment_id': hyperparams.get('experiment_id', 'unknown_setup_fail'), 'hyperparams': hyperparams}
+        return None, {'status': 'setup_failed_internal'}, minimal_metadata, None
     experiment_id = training_config['experiment_id']
     project_root = _PROJECT_ROOT_FROM_TRAIN # Use global constant
 
     # --- 2. Prepare Data ---
+    data_params = hyperparams.get('data_params', {}) # Extract nested data_params (still useful for metadata)
+    # --- V V V FIX: Correct the function call below V V V ---
     train_loader, val_loader, vocab_size, num_classes, token_dict, label_encoder = \
-        prepare_data_for_training(data, training_config['batch_size'])
+        prepare_data_for_training(data, training_config['batch_size']) # Remove data_params argument here
+    # --- ^ ^ ^ END FIX ^ ^ ^ ---
     if train_loader is None:
         print(f"❌ Data preparation failed for experiment {experiment_id}. Aborting.")
-        return None, None, None, None
+        minimal_metadata = {'experiment_id': experiment_id, 'hyperparams': hyperparams}
+        return None, {'status': 'data_prep_failed'}, minimal_metadata, None
     data_details = {
         'vocab_size': vocab_size, 'num_classes': num_classes,
-        'token_dict': token_dict, 'label_encoder': label_encoder, # Keep encoder itself
+        'token_dict': token_dict, 'label_encoder': label_encoder,
         'label_encoder_classes': label_encoder.classes_.tolist()
     }
 
@@ -1668,10 +1664,11 @@ def train_model(data: pd.DataFrame,
     model, device = initialize_model_and_device(vocab_size, num_classes, training_config)
     if model is None or device is None:
         print(f"❌ Model initialization failed for experiment {experiment_id}. Aborting.")
-        return None, None, None, None
+        minimal_metadata = {'experiment_id': experiment_id, 'hyperparams': hyperparams}
+        return None, {'status': 'model_init_failed'}, minimal_metadata, None
 
     # --- 4. Checkpoints & LR Finder ---
-    config_hash = generate_config_hash(hyperparams, num_classes, vocab_size)
+    config_hash = generate_config_hash(hyperparams, num_classes, vocab_size) # hyperparams now includes data_params
     checkpoint_paths = {
         'latest': get_checkpoint_path(experiment_id, hyperparams, num_classes, vocab_size, 'latest'),
         'best': get_checkpoint_path(experiment_id, hyperparams, num_classes, vocab_size, 'best')
@@ -1683,10 +1680,9 @@ def train_model(data: pd.DataFrame,
 
     if run_lr_finder:
         print("No checkpoint found, running LR Finder...")
-        # Create a temporary criterion JUST for the LR finder
         criterion_for_lr = nn.CrossEntropyLoss()
         effective_initial_lr = find_initial_learning_rate(
-            model=model, # Pass the potentially wrapped model
+            model=model,
             criterion=criterion_for_lr,
             train_loader=train_loader,
             device=device,
@@ -1694,18 +1690,34 @@ def train_model(data: pd.DataFrame,
             project_root=project_root,
             config_hash=config_hash
         )
-        del criterion_for_lr # Clean up temporary criterion
+        del criterion_for_lr
         print(f"LR Finder determined initial LR: {effective_initial_lr:.2e}")
     else:
         print(f"Checkpoint found at {checkpoint_paths['latest']}, skipping LR Finder.")
-        # LR will be loaded from checkpoint by load_training_state if resuming.
+        # --- <<< FIX: Load original initial_lr from previous metadata file >>> ---
+        metadata_filename_relative = f'data/models/{experiment_id}_metadata.json'
+        metadata_filename_abs = os.path.join(project_root, metadata_filename_relative)
+        loaded_initial_lr = None
+        if os.path.exists(metadata_filename_abs):
+            try:
+                with open(metadata_filename_abs, 'r') as f:
+                    previous_metadata = json.load(f)
+                loaded_initial_lr = previous_metadata.get('initial_learning_rate')
+                if loaded_initial_lr is not None:
+                    effective_initial_lr = loaded_initial_lr
+                    print(f"   Loaded original initial LR from metadata: {effective_initial_lr:.2e}")
+                else:
+                    print(f"   Warning: Key 'initial_learning_rate' not found in {metadata_filename_relative}. Using default {effective_initial_lr:.2e}.")
+            except Exception as e:
+                print(f"   Warning: Failed to load or parse previous metadata ({metadata_filename_relative}): {e}. Using default initial LR {effective_initial_lr:.2e}.")
+        else:
+             print(f"   Warning: Previous metadata file ({metadata_filename_relative}) not found. Using default initial LR {effective_initial_lr:.2e}.")
+        # --- End Fix ---
 
     # --- 5. Setup Optimizer & Scheduler ---
-    # This defines the structure; state might be overwritten by checkpoint load
     optimizer, scheduler = setup_optimizer_and_scheduler(model, effective_initial_lr, training_config)
 
     # --- 6. Load Training State (if checkpoint exists) ---
-    # This modifies model, optimizer, scheduler in-place if load successful
     training_state = load_training_state(
         latest_checkpoint_path=checkpoint_paths['latest'],
         model=model,
@@ -1714,195 +1726,143 @@ def train_model(data: pd.DataFrame,
         training_config=training_config,
         project_root=project_root
     )
-    # Unpack state needed for the loop and post-processing
-    start_epoch = training_state['start_epoch'] # 0-based index of next epoch
+    start_epoch = training_state['start_epoch']
     global_step = training_state['global_step']
-    # Note: cumulative_duration, best_metric_value, epochs_no_improve, running_metrics
-    # are accessed directly via training_state dictionary below for simplicity
 
     # --- 7. Training Loop ---
     print(f"\nStarting training loop from epoch {start_epoch + 1}...")
-    criterion = nn.CrossEntropyLoss() # Main loss function
+    criterion = nn.CrossEntropyLoss()
     session_start_time = time.time()
-    training_failed = False # Flag for catastrophic failure (NaN/Inf)
-    training_interrupted = False # <<< New flag for signal interruption
+    training_failed = False
+    training_interrupted = False
 
     for epoch in itertools.count(start_epoch):
-        epoch_1_based = epoch + 1 # Use 1-based for logging & checks
+        epoch_1_based = epoch + 1
 
-        # --- V V V Check for interruption signal FIRST V V V ---
+        # --- Check for interruption signal FIRST ---
         if not check_continue_func():
             print(f"\n🛑 Interruption signal detected before epoch {epoch_1_based}. Saving latest state and stopping.")
             training_interrupted = True
-            # --- Save Checkpoint NOW (state from end of previous epoch) ---
             current_session_duration = time.time() - session_start_time
             training_state['running_metrics']['training_duration'] = training_state['cumulative_duration'] + current_session_duration
-            # Save state reflecting the last *completed* epoch (index 'epoch-1')
-            save_epoch_idx = max(0, epoch - 1) # Index of last completed epoch
+            save_epoch_idx = max(0, epoch - 1)
             print(f"   Saving latest state (Epoch {save_epoch_idx + 1}) due to interruption.")
             manage_checkpoints(
-                is_best=False, # Not necessarily best
+                is_best=False,
                 save_latest=True, # Force save latest
                 checkpoint_paths=checkpoint_paths,
                 model=model,
                 optimizer=optimizer,
                 scheduler=scheduler,
-                epoch=save_epoch_idx, # Save state as of this completed epoch
-                global_step=global_step, # Use current global_step
+                epoch=save_epoch_idx,
+                global_step=global_step,
                 running_metrics=training_state['running_metrics'],
                 token_dict=data_details['token_dict'],
                 label_encoder=data_details['label_encoder'],
-                hyperparams=hyperparams,
+                hyperparams=hyperparams, # Pass the full hyperparams (includes data_params)
                 project_root=project_root
             )
-            # --- Break AFTER saving ---
             break # Exit outer loop
-        # --- ^ ^ ^ End interruption check ^ ^ ^ ---
 
         # --- Safety Break ---
         if epoch >= MAX_SAFETY_EPOCHS:
             print(f"WARNING: Reached safety limit of {MAX_SAFETY_EPOCHS} epochs. Stopping.")
-            training_state['running_metrics']['stopped_early'] = True # Mark as stopped (though not 'early' in the typical sense)
+            training_state['running_metrics']['stopped_early'] = True
             break
-
-        # --- Optional: Clear GPU Memory ---
-        # clear_gpu_memory() # Uncomment if needed
 
         # --- Train ---
         train_loss, global_step, train_fail = train_single_epoch(
-            model=model,
-            loader=train_loader,
-            criterion=criterion,
-            optimizer=optimizer,
-            device=device,
-            epoch_num=epoch_1_based,
-            global_step=global_step
-            # max_grad_norm=training_config.get('max_grad_norm', 1.0) # Can pass from config
+            model=model, loader=train_loader, criterion=criterion, optimizer=optimizer,
+            device=device, epoch_num=epoch_1_based, global_step=global_step
         )
         if train_fail:
             print(f"❌ Training failed in epoch {epoch_1_based}. Stopping run.")
             training_failed = True
-            break # Exit the main training loop
+            break
 
         # --- Validate ---
         val_loss, val_accuracy, conf_matrix, val_fail = validate_single_epoch(
-            model=model,
-            loader=val_loader,
-            criterion=criterion,
-            device=device,
-            epoch_num=epoch_1_based
+            model=model, loader=val_loader, criterion=criterion, device=device, epoch_num=epoch_1_based
         )
         if val_fail:
             print(f"❌ Validation failed in epoch {epoch_1_based}. Stopping run.")
             training_failed = True
-            break # Exit main loop
+            break
 
         # --- Update State & Check Stopping ---
-        current_lr = optimizer.param_groups[0]['lr'] # Get LR before potential scheduler step
+        current_lr = optimizer.param_groups[0]['lr']
         epoch_metrics_dict = {
-            'train_loss': train_loss,
-            'val_loss': val_loss,
-            'val_accuracy': val_accuracy,
-            'conf_matrix': conf_matrix,
-            'current_lr': current_lr
+            'train_loss': train_loss, 'val_loss': val_loss, 'val_accuracy': val_accuracy,
+            'conf_matrix': conf_matrix, 'current_lr': current_lr
         }
-
-        # Pass the whole training_state dict; it holds running_metrics, best_metric_value etc.
-        # It will be updated internally.
         training_state, should_stop, is_best = update_training_state_after_epoch(
-            training_state=training_state, # Pass the dict
-            training_config=training_config,
-            epoch_metrics=epoch_metrics_dict,
-            scheduler=scheduler,
-            epoch_num=epoch_1_based
+            training_state=training_state, training_config=training_config,
+            epoch_metrics=epoch_metrics_dict, scheduler=scheduler, epoch_num=epoch_1_based
         )
-
-        # Log epoch summary
         print(f"Epoch {epoch_1_based:>3} Summary | Trn Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_accuracy:.4f} | LR: {current_lr:.2e}")
 
-        # --- Manage Checkpoints (Regular end-of-epoch) ---
+        # --- Manage Checkpoints ---
         save_latest_flag = (epoch_1_based % CHECKPOINT_FREQ == 0)
-        # Update total duration within running_metrics before potentially saving
         current_session_duration = time.time() - session_start_time
         training_state['running_metrics']['training_duration'] = training_state['cumulative_duration'] + current_session_duration
-
-        # Only save if frequency matches OR if it's the best epoch
         if save_latest_flag or is_best:
             manage_checkpoints(
-                is_best=is_best,
-                save_latest=save_latest_flag, # Pass the frequency flag
-                checkpoint_paths=checkpoint_paths,
-                model=model,
-                optimizer=optimizer,
-                scheduler=scheduler,
-                epoch=epoch, # Pass current completed epoch (0-based)
-                global_step=global_step, # Pass updated global_step
-                running_metrics=training_state['running_metrics'], # Pass updated metrics
-                token_dict=data_details['token_dict'],
-                label_encoder=data_details['label_encoder'], # Pass encoder object
-                hyperparams=hyperparams,
+                is_best=is_best, save_latest=save_latest_flag, checkpoint_paths=checkpoint_paths,
+                model=model, optimizer=optimizer, scheduler=scheduler, epoch=epoch,
+                global_step=global_step, running_metrics=training_state['running_metrics'],
+                token_dict=data_details['token_dict'], label_encoder=data_details['label_encoder'],
+                hyperparams=hyperparams, # Pass full hyperparams
                 project_root=project_root
             )
 
         # --- Check for Early Stop ---
-        if should_stop:
-             # message already printed by update_training_state_after_epoch
-             break # Exit training loop
+        if should_stop: break
 
     # --- 8. Post-Training ---
     final_total_duration = training_state['running_metrics'].get('training_duration', 0.0)
     final_epochs_completed = training_state['running_metrics'].get('epochs_completed', 0)
 
-    # Determine final status message
-    # --- V V V UPDATED STATUS MESSAGE V V V ---
-    status_message = "failed (NaN/Inf)" if training_failed else \
-                     "interrupted by signal" if training_interrupted else \
-                     "stopped early" if training_state['running_metrics'].get('stopped_early', False) else \
-                     "reached safety limit" if epoch >= MAX_SAFETY_EPOCHS else \
-                     "finished successfully"
-    print(f"\n--- Training {status_message} for experiment {experiment_id} ---")
-    print(f"Total epochs completed in this run: {final_epochs_completed}. Total duration: {final_total_duration:.1f}s")
-
-    # --- V V V Handle Failure or Interruption V V V ---
-    if training_failed or training_interrupted:
-         print(f"❌ Training ended prematurely for {experiment_id}. No results returned.")
-         # Don't clean up all checkpoints, the 'latest' one saved might be useful for resuming
-         print("   Skipping final checkpoint cleanup to preserve latest state.")
-         return None, None, None, None # Return None tuple
-
-    # --- V V V Proceed only if training completed normally (finished or stopped early) V V V ---
-
-    # Load Best Model Weights
-    _ = load_best_model_weights(
-        model=model,
-        best_checkpoint_path=checkpoint_paths['best'],
-        device=device,
-        project_root=project_root
-    ) # We modify model in-place
-
-    # Save CM History
-    cm_history_path = save_confusion_matrix_history(
-        cm_history_list=training_state['running_metrics'].get('conf_matrix', []),
-        experiment_id=experiment_id,
-        project_root=project_root
-    )
-
-    # Compile Final Results
-    final_metrics, model_metadata = compile_final_results(
+    # --- Compile Metadata and Metrics (using the corrected effective_initial_lr) ---
+    final_metrics_summary_compiled, model_metadata = compile_final_results(
         running_metrics=training_state['running_metrics'],
-        hyperparams=hyperparams,
+        hyperparams=hyperparams, # Pass full hyperparams (includes data_params)
         training_config=training_config,
         data_details=data_details,
-        initial_lr=effective_initial_lr, # Pass the LR used for *starting* this run
+        initial_lr=effective_initial_lr, # Pass the correct initial LR
         total_duration=final_total_duration
     )
 
-    # --- Final Cleanup ---
-    # Clean checkpoints only after successful completion or successful early stop
-    print("\nCleaning up final checkpoint files (keeping only final model)...")
-    clean_old_checkpoints(experiment_id, completed=True) # Remove all intermediate checkpoints
-    print("Checkpoint cleanup complete.")
+    # Determine final status
+    final_status = 'unknown'
+    if training_failed: final_status = 'failed'; status_message = "failed (NaN/Inf)"
+    elif training_interrupted: final_status = 'interrupted'; status_message = "interrupted by signal"
+    elif training_state['running_metrics'].get('stopped_early', False): final_status = 'stopped_early'; status_message = "stopped early"
+    elif epoch >= MAX_SAFETY_EPOCHS - 1: final_status = 'completed_safety_limit'; status_message = f"reached safety limit ({MAX_SAFETY_EPOCHS})"
+    else: final_status = 'completed'; status_message = "finished successfully"
 
-    print(f"--- Training function returning results for {experiment_id} ---")
-    # Return the model (with best weights loaded), metrics, metadata, and cm path
-    return model, final_metrics, model_metadata, cm_history_path
+    print(f"\n--- Training {status_message} for experiment {experiment_id} ---")
+    print(f"Total epochs completed in this run: {final_epochs_completed}. Total duration: {final_total_duration:.1f}s")
+
+    # --- Handle Failure or Interruption RETURN ---
+    if final_status in ['failed', 'interrupted']:
+         print(f"❌ Training ended prematurely ({final_status}) for {experiment_id}.")
+         print("   Skipping final checkpoint cleanup to preserve latest state.")
+         # Return model_metadata which now contains hyperparams+data_params and correct initial_lr
+         # Use the final_metrics_summary_compiled which compile_final_results prepared
+         # (it might be missing best_acc etc., but has duration/epochs/status)
+         if 'status' not in final_metrics_summary_compiled: # Ensure status is set
+              final_metrics_summary_compiled['status'] = final_status
+         return None, final_metrics_summary_compiled, model_metadata, None
+
+    # --- Proceed only if training completed normally ---
+    _ = load_best_model_weights(model=model, best_checkpoint_path=checkpoint_paths['best'], device=device, project_root=project_root)
+    cm_history_path = save_confusion_matrix_history(cm_history_list=training_state['running_metrics'].get('conf_matrix', []), experiment_id=experiment_id, project_root=project_root)
+
+    # Add final status to the compiled metrics summary
+    final_metrics_summary_compiled['status'] = final_status
+
+    # --- Final Cleanup ---
+    # Silently clean up checkpoints
+    clean_old_checkpoints(experiment_id, completed=True)
+    # Return the model, full metrics, full metadata, and cm path
+    return model, final_metrics_summary_compiled, model_metadata, cm_history_path
